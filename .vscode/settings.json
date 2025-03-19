@@ -1,0 +1,19 @@
+{
+    "sqltools.connections": [
+        {
+            "mysqlOptions": {
+                "authProtocol": "default",
+                "enableSsl": "Disabled"
+            },
+            "previewLimit": 50,
+            "server": "localhost",
+            "port": 3306,
+            "driver": "MySQL",
+            "name": "progetto",
+            "group": "progetto",
+            "database": "SGA_db",
+            "username": "root",
+            "askForPassword": true
+        }
+    ]
+}
