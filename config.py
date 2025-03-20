@@ -33,8 +33,12 @@ PORTA_SCU = "50056"
 PORTA_GLS = "50057"
 
 #KAFKA
-KAFKA_BROKER = "localhost:9092"
-KAFKA_TOPIC = "event_update"
+KAFKA_BROKER_1 = "localhost:9092"
+KAFKA_BROKER_2 = "localhost:9092"
+KAFKA_TOPIC_1 = "aggiornamento_eventi"
+KAFKA_TOPIC_2 = "eventi_da_inviare"
 
-
-
+KAFKA_TOPIC_IN = "aggiornamento_eventi"
+KAFKA_TOPIC_OUT = "eventi_da_inviare"
+GROUP_ID_1 = "group1"
+GROUP_ID_2 = "group2"

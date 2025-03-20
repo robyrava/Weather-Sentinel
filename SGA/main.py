@@ -6,6 +6,7 @@ from config import*
 from db import*
 from utility import*
 
+import hashlib
 import threading
 import socket
 import time

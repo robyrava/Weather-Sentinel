@@ -251,7 +251,7 @@ def recupera_vincoli_pendenti():
     """
     connessione = None
     try:
-        # Inizializza la connessione al database
+        # CONNESSIONE AL DB
         connessione = inizializza_connessione_db(
             host=HOSTNAME, 
             porta=PORT, 
@@ -432,6 +432,7 @@ def produci_messaggio_kafka(nome_topic, produttore_kafka, messaggio):
     try:
         produttore_kafka.produce(nome_topic, value=messaggio, callback=callback_consegna)
         MESSAGGIO_KAFKA.inc()  # Incrementa il contatore delle metriche
+        logger.info(f"Messaggio inviato al broker Kafka: {messaggio}\n" )
     except BufferError:
         logger.error(
             '%% Coda del produttore locale piena (%d messaggi in attesa di consegna): riprova\n' % len(produttore_kafka))
@@ -1076,7 +1077,7 @@ app = crea_server()
 
 if __name__ == '__main__':
 
-    # connessione al db
+    # CREAZIONE TABELLE NEL DATABASE
     try:
         # Inizializza la connessione al database
         connessione = inizializza_connessione_db(
@@ -1119,9 +1120,10 @@ if __name__ == '__main__':
         if 'connessione' in locals() and connessione:
             chiudi_connessione_db(connessione)
 
-    # connessione al kafka
-    producer_conf = {'bootstrap.servers': KAFKA_BROKER, 'acks': 1}  # 1 ==> Conferma solo dal server leader
-    admin_conf = {'bootstrap.servers': KAFKA_BROKER} # Conf. dell'admin client
+    # KAFKA
+    producer_conf = {'bootstrap.servers': KAFKA_BROKER_1, 'acks': 1}  # 1 ==> Conferma solo dal server leader
+    producer_kafka = confluent_kafka.Producer(**producer_conf)
+    admin_conf = {'bootstrap.servers': KAFKA_BROKER_1} # Conf. dell'admin client
     kadmin = AdminClient(admin_conf) # Creazione client amministrativo
 
     # Creazione del topic aggiornamento_eventi se non esiste
@@ -1135,21 +1137,19 @@ if __name__ == '__main__':
 
     trovato = False
     for name in topic_names:
-        if name == KAFKA_TOPIC:
+        if name == KAFKA_TOPIC_1:
             trovato = True
     if trovato == False:
         # Topic non trovato, lo crea con 6 partizioni e fattore di replica 1
-        nuovo_topic = NewTopic(KAFKA_TOPIC, 6, 1)  
+        nuovo_topic = NewTopic(KAFKA_TOPIC_1, 6, 1)  
         kadmin.create_topics([nuovo_topic, ])
 
-    # Creazione del Producer Kafka
-    producer_kafka = confluent_kafka.Producer(**producer_conf)
     
     # Ricerca eventi da inviare già presenti nel DB
     Kafka_lista_messaggi = recupera_vincoli_pendenti()
     if Kafka_lista_messaggi != False:
         for message in Kafka_lista_messaggi:
-            while produci_messaggio_kafka(KAFKA_TOPIC, producer_kafka, message) == False:
+            while produci_messaggio_kafka(KAFKA_TOPIC_1, producer_kafka, message) == False:
                 pass  # Riprova finché non ha successo
     else:
         sys.exit("Errore nel trovare il lavoro in sospeso!")
@@ -1168,7 +1168,7 @@ if __name__ == '__main__':
     threadAPIGateway.start()
     
     """
-    # Decommentare se è necessario un thread per comunicare con User Manager
+    #Decommentare se è necessario un thread per comunicare con User Manager
     logger.info("Avvio thread User Manager!\n")
     threadUM = threading.Thread(target=comunica_con_um)
     threadUM.daemon = True
@@ -1185,7 +1185,7 @@ if __name__ == '__main__':
             Kafka_lista_messaggi = recupera_vincoli_pendenti()
             if Kafka_lista_messaggi != False:
                 for messaggio in Kafka_lista_messaggi:
-                    while produci_messaggio_kafka(KAFKA_TOPIC, producer_kafka, messaggio) == False:
+                    while produci_messaggio_kafka(KAFKA_TOPIC_1, producer_kafka, messaggio) == False:
                         pass  # Riprova finché non ha successo
             else:
                 logger.error("Errore nel trovare il lavoro in sospeso!")
