@@ -13,6 +13,7 @@ import logging
 import confluent_kafka
 from confluent_kafka.admin import AdminClient, NewTopic
 import json
+import requests
 
 
 
@@ -37,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 def crea_messaggio_kafka(dizionario_json_finale, id_città, connessione, istogramma=None):
     """
-    Crea un messaggio Kafka per una specifica città, raccogliendo tutti i vincoli che gli utenti hanno associati.
+    Crea un messaggio Kafka per una specifica città, raccogliendo tutti i vincoli che gli utenti hanno associati per quella città.
     
     Args:
         dizionario_json_finale: Dizionario JSON da popolare con i dati
@@ -419,6 +420,40 @@ def formatta_risposta_regole(lista_regole):
         
         return regole_restituite
 
+def ottieni_id_utente_da_email(email):
+    """
+    Ottiene l'ID dell'utente dal servizio SGA data l'email.
+    
+    Args:
+        email: Email dell'utente di cui recuperare l'ID
+        
+    Returns:
+        int: ID dell'utente se trovato
+        None: Se l'ID non è stato trovato o si è verificato un errore
+    """
+    try:
+        # URL dell'endpoint del SGA per recuperare l'ID utente
+        url = f"http://{SGA_HOST}:{PORTA_SGA}/utente/email/{email}"
+        
+        # Esegui la richiesta GET
+        risposta = requests.get(url)
+        
+        # Verifica se la richiesta è andata a buon fine
+        if risposta.status_code == 200:
+            # Estrai l'ID dalla risposta JSON
+            dati_risposta = risposta.json()
+            id_utente = dati_risposta.get('id')
+            logger.info(f"\nRecuperato ID per l'utente con email {email}: {id_utente}\n")
+            return id_utente
+        else:
+            logger.error(f"\nErrore nel recupero dell'ID per l'utente {email}. Codice: {risposta.status_code}, Risposta: {risposta.text}\n")
+            return None
+            
+    except Exception as e:
+        logger.error(f"\nEccezione durante il recupero dell'ID per l'utente {email}: {e}\n")
+        return None
+
+
 def avvia_server():
     
     hostname = socket.gethostname()
@@ -458,6 +493,14 @@ def crea_server():
                         
                     # Token valido, estrai email e procedi
                     email_utente = payload.get('email')
+                    
+                    # Ottieni l'ID utente tramite chiamata API al servizio SGA
+                    id_utente = ottieni_id_utente_da_email(email_utente)
+                    
+                    if id_utente is None:
+                        FAILURE.inc()
+                        DELTA_TIME.set(time.time_ns() - timestamp_client)
+                        return "Utente non trovato nel sistema", 401
                     
                     #Estrazione dei dati della città e delle regole
                     periodo_trigger = dati_dict.get('periodo_trigger')
@@ -660,7 +703,6 @@ def crea_server():
             FAILURE.inc()
             return "Errore: la richiesta deve essere in formato JSON", 400
 
-    #VIENE FATTA UNA DOPPIA CONNESSIONE AL DATABASE ==> AGGIUSTARE
     @app.route('/elimina_vincoli_utente', methods=['POST'])
     def gestione_elimina_vincoli_utente():
         """
@@ -689,18 +731,16 @@ def crea_server():
                 # Token valido, estrai email e procedi
                 email_utente = payload.get('email')
                 
-                # Recupera l'ID utente dal database utilizzando l'email
+                # Ottieni l'ID utente tramite chiamata API al servizio SGA
+                id_utente = ottieni_id_utente_da_email(email_utente)
+                
+                if id_utente is None:
+                    FAILURE.inc()
+                    DELTA_TIME.set(time.time_ns() - timestamp_client)
+                    return "Utente non trovato nel sistema", 401
+                
                 try:
-                    # Inizializza la connessione al database
-                    connessione_SGA = inizializza_connessione_db(
-                        host=HOSTNAME, 
-                        porta=PORT, 
-                        utente=USER, 
-                        password=PASSWORD_DB, 
-                        database=DATABASE_SGA
-                    )
-
-                    # Inizializza la connessione al database
+                    # Inizializza la connessione al database SGM
                     connessione_SGM = inizializza_connessione_db(
                         host=HOSTNAME, 
                         porta=PORT, 
@@ -709,37 +749,13 @@ def crea_server():
                         database=DATABASE_SGM
                     )
                     
-                    if not connessione_SGA:
+                    if not connessione_SGM:
                         FAILURE.inc()
                         INTERNAL_ERROR.inc()
                         DELTA_TIME.set(time.time_ns() - timestamp_client)
                         return "Errore nella connessione al database", 500
                     
                     try:
-                        # Recupera ID utente dall'email
-                        cursore_utente = esegui_query(
-                            connessione_SGA,
-                            query="SELECT id FROM utenti WHERE email = %s",
-                            parametri=(email_utente,),
-                            istogramma=QUERY_DURATIONS_HISTOGRAM
-                        )
-                        
-                        if not cursore_utente:
-                            FAILURE.inc()
-                            INTERNAL_ERROR.inc()
-                            DELTA_TIME.set(time.time_ns() - timestamp_client)
-                            return "Errore nella query di ricerca utente", 500
-                            
-                        utente = cursore_utente.fetchone()
-                        
-                        if not utente:
-                            logger.error(f"Utente con email {email_utente} non trovato nel database")
-                            FAILURE.inc()
-                            DELTA_TIME.set(time.time_ns() - timestamp_client)
-                            return "Utente non trovato nel database", 401
-                            
-                        id_utente = utente[0]
-                        
                         #eliminazione dei vincoli
                         nome_città = dati_dict.get('città')[0]
                         latitudine = dati_dict.get('città')[1]
@@ -799,7 +815,6 @@ def crea_server():
                     
                     finally:
                         # Assicurati che la connessione venga chiusa in ogni caso
-                        chiudi_connessione_db(connessione_SGA)
                         chiudi_connessione_db(connessione_SGM)
                         
                 except Exception as err:
@@ -845,17 +860,15 @@ def crea_server():
                     # Token valido, estrai email e procedi
                     email_utente = payload.get('email')
                     
+                    # Ottieni l'ID utente tramite chiamata API al servizio SGA
+                    id_utente = ottieni_id_utente_da_email(email_utente)
+                    
+                    if id_utente is None:
+                        FAILURE.inc()
+                        DELTA_TIME.set(time.time_ns() - timestamp_client)
+                        return "Utente non trovato nel sistema", 401
                     
                     try:
-                        # Inizializza la connessione al database SGA per ottenere l'ID utente
-                        connessione_SGA = inizializza_connessione_db(
-                            host=HOSTNAME, 
-                            porta=PORT, 
-                            utente=USER, 
-                            password=PASSWORD_DB, 
-                            database=DATABASE_SGA
-                        )
-                        
                         # Inizializza la connessione al database SGM per le regole
                         connessione_SGM = inizializza_connessione_db(
                             host=HOSTNAME, 
@@ -865,37 +878,13 @@ def crea_server():
                             database=DATABASE_SGM
                         )
                         
-                        if not connessione_SGA or not connessione_SGM:
+                        if not connessione_SGM:
                             FAILURE.inc()
                             INTERNAL_ERROR.inc()
                             DELTA_TIME.set(time.time_ns() - timestamp_client)
                             return "Errore nella connessione al database", 500
                         
                         try:
-                            # Recupera l'ID utente dalla tabella utenti in SGA
-                            cursore_utente = esegui_query(
-                                connessione_SGA,
-                                query="SELECT id FROM utenti WHERE email = %s",
-                                parametri=(email_utente,),
-                                istogramma=QUERY_DURATIONS_HISTOGRAM
-                            )
-                            
-                            if not cursore_utente:
-                                FAILURE.inc()
-                                INTERNAL_ERROR.inc()
-                                DELTA_TIME.set(time.time_ns() - timestamp_client)
-                                return "Errore nella query di ricerca utente", 500
-                                
-                            utente = cursore_utente.fetchone()
-                            
-                            if not utente:
-                                logger.error(f"Utente con email {email_utente} non trovato nel database")
-                                FAILURE.inc()
-                                DELTA_TIME.set(time.time_ns() - timestamp_client)
-                                return "Utente non trovato nel database", 401
-                                
-                            id_utente = utente[0]
-                            
                             # Recupera tutte le regole dell'utente
                             cursore_vincoli = esegui_query(
                                 connessione_SGM,
@@ -965,8 +954,7 @@ def crea_server():
                             return f"LE TUE REGOLE: <br><br> {regole_formattate}", 200
                         
                         finally:
-                            # Assicurati che le connessioni vengano chiuse in ogni caso
-                            chiudi_connessione_db(connessione_SGA)
+                            # Assicurati che la connessione venga chiusa
                             chiudi_connessione_db(connessione_SGM)
                     
                     except Exception as err:
@@ -975,7 +963,7 @@ def crea_server():
                         INTERNAL_ERROR.inc()
                         DELTA_TIME.set(time.time_ns() - timestamp_client)
                         return f"Errore nel database: {str(err)}", 500
-            
+        
             except Exception as e:
                 FAILURE.inc()
                 return f"Errore nella lettura dei dati: {str(e)}", 400

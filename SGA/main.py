@@ -385,7 +385,64 @@ def crea_server():
             FAILURE.inc()
             INTERNAL_ERROR.inc()
             return f"Errore nel recupero dell'email: {str(err)}", 500
-        
+
+    @app.route('/utente/email/<email>', methods=['GET'])
+    def ottieni_id_utente(email):
+        """
+        Endpoint per recuperare l'ID di un utente data la sua email.
+        """
+        # Incrementa la metrica delle richieste
+        REQUEST.inc()
+
+        try:
+            # Inizializza la connessione al database
+            connessione = inizializza_connessione_db(
+                host=HOSTNAME, 
+                porta=PORT, 
+                utente=USER, 
+                password=PASSWORD_DB, 
+                database=DATABASE_SGA
+            )
+
+            if not connessione:
+                FAILURE.inc()
+                INTERNAL_ERROR.inc()
+                return "Errore nella connessione al database", 500
+
+            try:
+                # Query per recuperare l'ID data l'email
+                cursore = esegui_query(
+                    connessione=connessione,
+                    query="SELECT id FROM utenti WHERE email = %s",
+                    parametri=(email,),
+                    istogramma=QUERY_DURATIONS_HISTOGRAM
+                )
+
+                if not cursore:
+                    FAILURE.inc()
+                    INTERNAL_ERROR.inc()
+                    return "Errore nel recupero dell'ID utente", 500
+
+                risultato = cursore.fetchone()
+
+                if not risultato:
+                    FAILURE.inc()
+                    return f"Utente con email {email} non trovato", 404
+
+                # Restituisci l'ID come JSON
+                RESPONSE_TO_WMS.inc()
+                return {"id": risultato[0], "email": email}, 200
+
+            finally:
+                # Assicurati che la connessione venga chiusa in ogni caso
+                chiudi_connessione_db(connessione)
+
+        except Exception as err:
+            logger.error(f"Eccezione sollevata! -> {err}")
+            FAILURE.inc()
+            INTERNAL_ERROR.inc()
+            return f"Errore nel recupero dell'ID: {str(err)}", 500    
+    
     #@app.route('/logout', methods=['POST'])
     # Con JWT non c'è bisogno di una vera operazione di logout lato server,
     # poiché i token sono stateless.
