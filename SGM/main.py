@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 def crea_messaggio_kafka(dizionario_json_finale, id_città, connessione, istogramma=None):
     """
-    Crea un messaggio Kafka per una specifica città, raccogliendo tutti i vincoli utente associati.
+    Crea un messaggio Kafka per una specifica città, raccogliendo tutti i vincoli che gli utenti hanno associati.
     
     Args:
         dizionario_json_finale: Dizionario JSON da popolare con i dati
@@ -49,196 +49,112 @@ def crea_messaggio_kafka(dizionario_json_finale, id_città, connessione, istogra
         str: Stringa JSON del messaggio formattato per Kafka
         None: In caso di errore
     """  
-
-    try:
-        # Recupera informazioni sulla città
-        cursore_città = esegui_query(
-            connessione=connessione,
-            query="SELECT città, latitudine, longitudine, codice_postale, codice_stato FROM citta WHERE id = %s",
-            parametri=(str(id_città),),
-            istogramma=istogramma
-        )
-        
-        if not cursore_città:
-            logger.error(f"Errore nel recupero dei dati della città ID {id_città}")
-            return None
-            
-        città = cursore_città.fetchone()  # Informazioni sulla città per il messaggio Kafka
-        if not città:
-            logger.error(f"Città con ID {id_città} non trovata")
-            return None
-        
-        # Liste per memorizzare i vincoli degli utenti
-        lista_id_utenti = list()
-        lista_id_righe = list()
-        lista_temp_max = list()
-        lista_temp_min = list()
-        lista_umidità_max = list()
-        lista_umidità_min = list()
-        lista_pressione_max = list()
-        lista_pressione_min = list()
-        lista_nuvole_max = list()
-        lista_nuvole_min = list()
-        lista_velocità_vento_max = list()
-        lista_velocità_vento_min = list()
-        lista_direzione_vento = list()
-        lista_pioggia = list()
-        lista_neve = list()
-        
-        # Recupera vincoli utente per questa città
-        cursore_vincoli = esegui_query(
-            connessione=connessione,
-            query="SELECT * FROM vincoli_utente WHERE TIMESTAMPDIFF(SECOND, timestamp, CURRENT_TIMESTAMP()) > periodo_trigger AND controllato=TRUE AND id_città = %s",
-            parametri=(str(id_città),),
-            istogramma=istogramma
-        )
-        
-        if not cursore_vincoli:
-            logger.error(f"Errore nel recupero dei vincoli per la città ID {id_città}")
-            return None
-            
-        risultati = cursore_vincoli.fetchall()
-        
-        # Elabora i vincoli di ogni utente
-        for risultato in risultati:
-            dizionario_regole = json.loads(risultato[3])
-            lista_id_utenti.append(risultato[1])
-            lista_id_righe.append(risultato[0])
-            lista_temp_max.append(dizionario_regole.get("temp_max"))
-            lista_temp_min.append(dizionario_regole.get("temp_min"))
-            lista_umidità_max.append(dizionario_regole.get("umidità_max"))
-            lista_umidità_min.append(dizionario_regole.get("umidità_min"))
-            lista_pressione_max.append(dizionario_regole.get("pressione_max"))
-            lista_pressione_min.append(dizionario_regole.get("pressione_min"))
-            lista_nuvole_max.append(dizionario_regole.get("nuvole_max"))
-            lista_nuvole_min.append(dizionario_regole.get("nuvole_min"))
-            lista_velocità_vento_max.append(dizionario_regole.get("velocità_vento_max"))
-            lista_velocità_vento_min.append(dizionario_regole.get("velocità_vento_min"))
-            lista_direzione_vento.append(dizionario_regole.get("direzione_vento"))
-            lista_pioggia.append(dizionario_regole.get("pioggia"))
-            lista_neve.append(dizionario_regole.get("neve"))
-        
-        # Popola il dizionario finale
-        dizionario_json_finale["id_righe"] = lista_id_righe
-        dizionario_json_finale["id_utenti"] = lista_id_utenti
-        dizionario_json_finale["città"] = città
-        
-        # Aggiungi solo le regole che hanno almeno un valore non nullo
-        
-        # Temperatura massima
-        trovato = False
-        for elemento in lista_temp_max:
-            if elemento != "null":
-                trovato = True
-                break
-        if trovato:
-            dizionario_json_finale["temp_max"] = lista_temp_max
-        
-        # Temperatura minima
-        trovato = False
-        for elemento in lista_temp_min:
-            if elemento != "null":
-                trovato = True
-                break
-        if trovato:
-            dizionario_json_finale["temp_min"] = lista_temp_min
-        
-        # Umidità massima
-        trovato = False
-        for elemento in lista_umidità_max:
-            if elemento != "null":
-                trovato = True
-                break
-        if trovato:
-            dizionario_json_finale["umidità_max"] = lista_umidità_max
-        
-        # Umidità minima
-        trovato = False
-        for elemento in lista_umidità_min:
-            if elemento != "null":
-                trovato = True
-                break
-        if trovato:
-            dizionario_json_finale["umidità_min"] = lista_umidità_min
-        
-        # Pressione massima
-        trovato = False
-        for elemento in lista_pressione_max:
-            if elemento != "null":
-                trovato = True
-                break
-        if trovato:
-            dizionario_json_finale["pressione_max"] = lista_pressione_max
-        
-        # Pressione minima
-        trovato = False
-        for elemento in lista_pressione_min:
-            if elemento != "null":
-                trovato = True
-                break
-        if trovato:
-            dizionario_json_finale["pressione_min"] = lista_pressione_min
-        
-        # Nuvolosità massima
-        trovato = False
-        for elemento in lista_nuvole_max:
-            if elemento != "null":
-                trovato = True
-                break
-        if trovato:
-            dizionario_json_finale["nuvole_max"] = lista_nuvole_max
-        
-        # Nuvolosità minima
-        trovato = False
-        for elemento in lista_nuvole_min:
-            if elemento != "null":
-                trovato = True
-                break
-        if trovato:
-            dizionario_json_finale["nuvole_min"] = lista_nuvole_min
-        
-        # Velocità vento massima
-        trovato = False
-        for elemento in lista_velocità_vento_max:
-            if elemento != "null":
-                trovato = True
-                break
-        if trovato:
-            dizionario_json_finale["velocità_vento_max"] = lista_velocità_vento_max
-        
-        # Velocità vento minima
-        trovato = False
-        for elemento in lista_velocità_vento_min:
-            if elemento != "null":
-                trovato = True
-                break
-        if trovato:
-            dizionario_json_finale["velocità_vento_min"] = lista_velocità_vento_min
-        
-        # Pioggia
-        trovato = False
-        for elemento in lista_pioggia:
-            if elemento != "null":
-                trovato = True
-                break
-        if trovato:
-            dizionario_json_finale["pioggia"] = lista_pioggia
-        
-        # Neve
-        trovato = False
-        for elemento in lista_neve:
-            if elemento != "null":
-                trovato = True
-                break
-        if trovato:
-            dizionario_json_finale["neve"] = lista_neve
-        
-        logger.info("DIZIONARIO JSON FINALE: " + str(dizionario_json_finale))
-        return json.dumps(dizionario_json_finale)
+    tempo_inizio_db = time.time_ns()
+    cursore = esegui_query(
+        connessione=connessione,
+        query="SELECT città, latitudine, longitudine, codice_postale, codice_stato FROM citta WHERE id = %s",
+        parametri=(str(id_città),),
+        istogramma=istogramma
+    )
     
-    except Exception as err:
-        logger.error(f"Errore nella creazione del messaggio Kafka: {err}")
+    if not cursore:
+        logger.error("Errore durante il recupero delle informazioni sulla città")
         return None
+        
+    città = cursore.fetchone()  # Lista di informazioni sulla città corrente del messaggio Kafka
+    tempo_fine_db = time.time_ns()
+    if istogramma:
+        istogramma.observe(tempo_fine_db - tempo_inizio_db)
+    
+    # Liste per raccogliere i dati di tutti gli utenti per questa città
+    lista_id_utenti = []
+    lista_temp_max = []
+    lista_temp_min = []
+    lista_umi_max = []
+    lista_umi_min = []
+    lista_pressione_max = []
+    lista_pressione_min = []
+    lista_nuvole_max = []
+    lista_nuvole_min = []
+    lista_vel_vento_max = []
+    lista_vel_vento_min = []
+    lista_direzione_vento = []
+    lista_pioggia = []
+    lista_neve = []
+    lista_id_righe = []
+    
+    tempo_inizio_db = time.time_ns()
+    cursore = esegui_query(
+        connessione=connessione,
+        query="SELECT * FROM vincoli_utente WHERE TIMESTAMPDIFF(SECOND, timestamp, CURRENT_TIMESTAMP()) > periodo_trigger AND controllato=TRUE AND id_città = %s",
+        parametri=(str(id_città),),
+        istogramma=istogramma
+    )
+    
+    if not cursore:
+        logger.error("Errore durante il recupero dei vincoli utente")
+        return None
+        
+    risultati = cursore.fetchall()
+    tempo_fine_db = time.time_ns()
+    if istogramma:
+        istogramma.observe(tempo_fine_db - tempo_inizio_db)
+    
+    # Se non ci sono vincoli da controllare, non procedere
+    if not risultati:
+        logger.info(f"Nessun vincolo da controllare per la città ID {id_città}")
+        return None
+    
+    # Elabora ogni vincolo trovato
+    for risultato in risultati:
+        dizionario_regole = json.loads(risultato[3])  # Indice 3 contiene il campo regole in JSON
+        lista_id_utenti.append(risultato[1])  # Indice 1 contiene id_utente
+        lista_id_righe.append(risultato[0])   # Indice 0 contiene id della riga
+        
+        # Estrai i valori delle regole, usando "null" come valore predefinito
+        lista_temp_max.append(dizionario_regole.get("temp_max", "null"))
+        lista_temp_min.append(dizionario_regole.get("temp_min", "null"))
+        lista_umi_max.append(dizionario_regole.get("umi_max", "null"))
+        lista_umi_min.append(dizionario_regole.get("umi_min", "null"))
+        lista_pressione_max.append(dizionario_regole.get("pressione_max", "null"))
+        lista_pressione_min.append(dizionario_regole.get("pressione_min", "null"))
+        lista_nuvole_max.append(dizionario_regole.get("nuvole_max", "null"))
+        lista_nuvole_min.append(dizionario_regole.get("nuvole_min", "null"))
+        lista_vel_vento_max.append(dizionario_regole.get("vel_vento_max", "null"))
+        lista_vel_vento_min.append(dizionario_regole.get("vel_vento_min", "null"))
+        lista_direzione_vento.append(dizionario_regole.get("direzione_vento", "null"))
+        lista_pioggia.append(dizionario_regole.get("pioggia", "null"))
+        lista_neve.append(dizionario_regole.get("neve", "null"))
+    
+    # Costruisci il messaggio finale con i dati raccolti
+    dizionario_json_finale["num_righe"] = lista_id_righe
+    dizionario_json_finale["id_utente"] = lista_id_utenti
+    dizionario_json_finale["localita"] = città
+    
+    # Aggiungi solo le regole che hanno almeno un valore non nullo
+    # Per ogni tipo di regola, controlla se almeno un utente ha un valore non nullo
+    for nome_campo, lista_valori in [
+        ("temp_max", lista_temp_max),
+        ("temp_min", lista_temp_min),
+        ("umi_max", lista_umi_max),
+        ("umi_min", lista_umi_min),
+        ("pressione_max", lista_pressione_max),
+        ("pressione_min", lista_pressione_min),
+        ("nuvole_max", lista_nuvole_max),
+        ("nuvole_min", lista_nuvole_min),
+        ("vel_vento_max", lista_vel_vento_max),
+        ("vel_vento_min", lista_vel_vento_min),
+        ("direzione_vento", lista_direzione_vento),
+        ("pioggia", lista_pioggia),
+        ("neve", lista_neve)
+    ]:
+        if any(elemento != "null" for elemento in lista_valori):
+            dizionario_json_finale[nome_campo] = lista_valori
+    
+    logger.info(f"\nDIZIONARIO JSON FINALE: {str(dizionario_json_finale)}\n")
+    return json.dumps(dizionario_json_finale)   
+
+    
 
 def recupera_vincoli_pendenti():
     """
@@ -297,7 +213,7 @@ def recupera_vincoli_pendenti():
                 id_città = città[0]
                 dizionario_json_finale = dict()
                 
-                # Assumo che esista una funzione equivalente a make_kafka_message
+                # CREO MESSAGGIO KAFKA
                 messaggio = crea_messaggio_kafka(dizionario_json_finale, id_città, connessione, QUERY_DURATIONS_HISTOGRAM)
                 
                 if messaggio:
@@ -331,7 +247,7 @@ def callback_consegna(err, msg):
         logger.error('%% Consegna messaggio fallita: %s\n' % err)
         dizionario_messaggio = json.loads(msg.value())
         logger.info(dizionario_messaggio)
-        lista_id_righe = dizionario_messaggio.get("id_righe")
+        lista_id_righe = dizionario_messaggio.get("num_righe")
         try:
             # Inizializza la connessione al database
             connessione = inizializza_connessione_db(
@@ -373,11 +289,11 @@ def callback_consegna(err, msg):
     
     else:
         MESSAGGIO_KAFKA_CONSEGNATO.inc()
-        logger.info('%% Messaggio consegnato a %s, partizione[%d] @ %d\n' %
+        logger.info('%% Messaggio consegnato al topic %s, partizione[%d] @ %d\n' %
                     (msg.topic(), msg.partition(), msg.offset()))
         dizionario_messaggio = json.loads(msg.value())
         logger.info(dizionario_messaggio)
-        lista_id_righe = dizionario_messaggio.get("id_righe")
+        lista_id_righe = dizionario_messaggio.get("num_righe")
         try:
             # Inizializza la connessione al database
             connessione = inizializza_connessione_db(
@@ -407,6 +323,8 @@ def callback_consegna(err, msg):
                     
                     if not risultato:
                         logger.error(f"Errore nell'aggiornamento del vincolo con ID {id}")
+
+                    
             
             finally:
                 # Chiudi la connessione al database
@@ -1158,7 +1076,7 @@ if __name__ == '__main__':
     evento_timer_scaduto = threading.Event()
 
     logger.info("Avvio thread timer!\n")
-    threadTimer = threading.Thread(target=timer, args=(60, evento_timer_scaduto))
+    threadTimer = threading.Thread(target=timer, args=(INTERVALLO_PRODUZIONE_NOTIFICHE_KAFKA, evento_timer_scaduto))
     threadTimer.daemon = True
     threadTimer.start()
     

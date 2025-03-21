@@ -20,7 +20,7 @@ from flask import Flask
 from prometheus_client import Counter, generate_latest, REGISTRY, Gauge, Histogram
 from flask import Response
 import logging
-
+from notificatore import ThreadNotificatore
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -35,6 +35,31 @@ KAFKA_MESSAGE_DELIVERED = Counter('WORKER_kafka_message_delivered_number', 'Tota
 QUERY_DURATIONS_HISTOGRAM = Histogram('WORKER_query_durations_nanoseconds_DB', 'DB query durations in nanoseconds', buckets=[5000000, 10000000, 25000000, 50000000, 75000000, 100000000, 250000000, 500000000, 750000000, 1000000000, 2500000000,5000000000,7500000000,10000000000])
 # buckets indicated because of measuring time in nanoseconds
 
+# Funzione per avviare il thread di notifica
+def avvia_thread_notificatore(intervallo=60):  # Default: controlla ogni minuto
+    """
+    Avvia il thread di notifica.
+    
+    Args:
+        intervallo: Intervallo in secondi tra i controlli
+    
+    Returns:
+        ThreadNotificatore: L'istanza del thread avviato
+    """
+    thread = ThreadNotificatore(intervallo,ID_MONITORAGGIO)
+    thread.start()
+    return thread
+
+# Funzione per fermare il thread di notifica
+def ferma_thread_notificatore():
+    """
+    Ferma il thread di notifica cambiando il flag globale.
+    """
+    global thread_notificatore_attivo
+    thread_notificatore_attivo = False
+    logger.info("\nRichiesta di terminazione del thread di notifica\n")
+
+
 def crea_server():
     app = Flask(__name__)
     
@@ -47,28 +72,28 @@ def crea_server():
 
 def avvia_server():
     hostname = socket.gethostname()
-    logger.info(f'Hostname: {hostname} -> server starting on port {str(PORTA_SED)}')
+    logger.info(f'\nHostname: {hostname} -> server starting on port {str(PORTA_SED)}\n')
     app.run(HOST, port=PORTA_SED, threaded=True)
 
-# Funzione di callback per la conferma degli offset di Kafka
 def commit_completed(err, partitions):
     if err:
-        logger.error(f"Errore durante il commit: {err}")
+        logger.error(f"\nErrore durante il commit: {err}\n")
     else:
-         # Usa repr() per evitare problemi con i caratteri di formato
-        #logger.info("Commit completato con successo: " + str(partitions) + "\n")
-        logger.info("Commit completato con successo\n")
+        
+        logger.info("\nCommit completato con successo\n")
 
-# Funzione per trovare i monitoraggi attivi
-def trova_monitoraggi_attivi():
+def avvia_monitoraggio():    
     """
-    Recupera i monitoraggi attivi dal database e li prepara per l'invio.
+    Recupera tutti i monitoraggi attivi non ancora controllati dal database, 
+    li elabora e imposta il flag 'controllato' a true.
     
     Returns:
-        str: JSON contenente i monitoraggi da inviare
-        str: '{}' se non ci sono monitoraggi da inviare
+        str: JSON contenente gli eventi da notificare
+        str: '{}' se non ci sono eventi da notificare
     """
-    """
+    tutti_eventi = {"eventi": []}
+    id_regole_da_aggiornare = []
+
     try:
         connessione = inizializza_connessione_db(
             host=HOSTNAME, 
@@ -79,84 +104,591 @@ def trova_monitoraggi_attivi():
         )
         
         if not connessione:
-            logger.error("Impossibile connettersi al database per recuperare i monitoraggi attivi")
+            logger.error("\nImpossibile connettersi al database per recuperare i monitoraggi attivi\n")
             return '{}'
         
         try:
-            tempo_inizio = time.time_ns()
-            
-            # Recupera i monitoraggi attivi
+            # Recupera tutti i monitoraggi attivi non ancora controllati
             cursore = esegui_query(
                 connessione=connessione,
-                query="SELECT regole FROM monitoraggi_attivi WHERE id_monitoraggio = %s",
+                query="SELECT id, regole FROM eventi_da_monitorare WHERE id_monitoraggio = %s AND controllato = false",
                 parametri=(ID_MONITORAGGIO,),
                 istogramma=QUERY_DURATIONS_HISTOGRAM
             )
             
             if not cursore:
-                logger.error("Errore nel recupero dei monitoraggi attivi")
+                logger.error("\nErrore nel recupero dei monitoraggi attivi\n")
                 return '{}'
-                
+
+            # Recupera tutte le righe
             risultati = cursore.fetchall()
             
             # Se non ci sono risultati, restituisci un dizionario vuoto
-            if not risultati:
+            if not risultati or len(risultati) == 0:
+                logger.info("\nNessun monitoraggio attivo non controllato trovato\n")
                 return '{}'
-                
-            # Prepara il risultato combinando tutti i monitoraggi
-            monitoraggi_combinati = {}
-            for riga in risultati:
-                regole = json.loads(riga[0])
-                # Logica di combinazione dei monitoraggi
-                # Questa è una semplificazione - potrebbe essere necessario adattarla
-                for chiave, valore in regole.items():
-                    if chiave not in monitoraggi_combinati:
-                        monitoraggi_combinati[chiave] = valore
             
-            return json.dumps(monitoraggi_combinati)
+            logger.info(f"\nTrovate {len(risultati)} regole da elaborare\n")
+            
+            # Elabora ogni regola
+            for risultato in risultati:
+                id_regola = risultato[0]
+                regole_json = risultato[1]
+                
+                try:
+                    # Aggiungi l'ID alla lista per l'aggiornamento
+                    id_regole_da_aggiornare.append(id_regola)
+                    
+                    # Converti JSON in dizionario
+                    regole_dict = json.loads(regole_json)
+                    
+                    # Estrai il nome della città
+                    città = regole_dict['localita'][0]
+                    
+                    # Esegui la chiamata API OpenWeather
+                    rest_call = f"https://api.openweathermap.org/data/2.5/weather?q={città}&units=metric&appid={APIKEY}"
+                    data = esegui_query_rest(rest_call)
+                    formatted_data = formatta_dati(data)
+                    eventi_regola = controlla_regole(regole_dict, formatted_data)
+                    
+                    # Aggiungi gli eventi di questa regola al totale
+                    if 'eventi' in eventi_regola and eventi_regola['eventi']:
+                        tutti_eventi['eventi'].extend(eventi_regola['eventi'])
+                        
+                except Exception as e:
+                    logger.error(f"\nErrore nell'elaborazione della regola ID {id_regola}: {e}\n")
+                    # Continua con la prossima regola
+            
+            # Aggiorna tutte le regole elaborate
+            if id_regole_da_aggiornare:
+                # Crea stringa di placeholders per la query IN
+                placeholders = ', '.join(['%s'] * len(id_regole_da_aggiornare))
+                
+                # Esegui la query di aggiornamento per tutte le regole
+                risultato_aggiornamento = esegui_query(
+                    connessione=connessione,
+                    query=f"UPDATE eventi_da_monitorare SET controllato = true WHERE id IN ({placeholders})",
+                    parametri=tuple(id_regole_da_aggiornare),
+                    commit=True,
+                    istogramma=QUERY_DURATIONS_HISTOGRAM
+                )
+                
+                if risultato_aggiornamento:
+                    logger.info(f"\nAggiornate {len(id_regole_da_aggiornare)} regole nel database (controllato = true)\n")
+                else:
+                    logger.error("\nErrore nell'aggiornamento delle regole nel database\n")
+            
+            return json.dumps(tutti_eventi)
             
         finally:
             chiudi_connessione_db(connessione)
             
     except Exception as err:
-        logger.error(f"Errore nel recupero dei monitoraggi attivi: {err}")
+        logger.error(f"\nErrore nel recupero e processamento dei monitoraggi attivi: {err}\n")
         return '{}'
-    """
-    return '{}' #da togliere
 
-# Funzione per produrre messaggi Kafka
-def produci_messaggio_kafka(topic, producer, messaggio):
+""" VECCHIA VERSIONE
+def avvia_monitoraggio():    
+     """
+"""
+    Recupera tutti i monitoraggi attivi dal database, li elabora e poi li elimina.
+    
+    Returns:
+        str: JSON contenente gli eventi da notificare
+        str: '{}' se non ci sono eventi da notificare
     """
-    Pubblica un messaggio sul topic Kafka specificato.
+"""
+    tutti_eventi = {"eventi": []}
+    id_regole_da_eliminare = []
+
+    try:
+        connessione = inizializza_connessione_db(
+            host=HOSTNAME, 
+            porta=PORT, 
+            utente=USER, 
+            password=PASSWORD_DB, 
+            database=DATABASE_SED
+        )
+        
+        if not connessione:
+            logger.error("\nImpossibile connettersi al database per recuperare i monitoraggi attivi\n")
+            return '{}'
+        
+        try:
+            # Recupera tutti i monitoraggi attivi
+            cursore = esegui_query(
+                connessione=connessione,
+                query="SELECT id, regole FROM eventi_da_monitorare WHERE id_monitoraggio = %s",
+                parametri=(ID_MONITORAGGIO,),
+                istogramma=QUERY_DURATIONS_HISTOGRAM
+            )
+
+            if not cursore:
+                logger.error("\nErrore nel recupero dei monitoraggi attivi\n")
+                return '{}'
+
+            # Recupera tutte le righe
+            risultati = cursore.fetchall()
+            
+            # Se non ci sono risultati, restituisci un dizionario vuoto
+            if not risultati or len(risultati) == 0:
+                logger.info("\nNessun monitoraggio attivo trovato\n")
+                return '{}'
+            
+            logger.info(f"\nTrovate {len(risultati)} regole da elaborare\n")
+            
+            # Elabora ogni regola
+            for risultato in risultati:
+                id_regola = risultato[0]
+                regole_json = risultato[1]
+                
+                try:
+                    # Aggiungi l'ID alla lista per l'eliminazione
+                    id_regole_da_eliminare.append(id_regola)
+                    
+                    # Converti JSON in dizionario
+                    regole_dict = json.loads(regole_json)
+                    
+                    # Estrai il nome della città
+                    città = regole_dict['localita'][0]
+                    
+                    # Esegui la chiamata API OpenWeather
+                    rest_call = f"https://api.openweathermap.org/data/2.5/weather?q={città}&units=metric&appid={APIKEY}"
+                    data = esegui_query_rest(rest_call)
+                    formatted_data = formatta_dati(data)
+                    eventi_regola = controlla_regole(regole_dict, formatted_data)
+                    
+                    # Aggiungi gli eventi di questa regola al totale
+                    if 'eventi' in eventi_regola and eventi_regola['eventi']:
+                        tutti_eventi['eventi'].extend(eventi_regola['eventi'])
+                        
+                except Exception as e:
+                    logger.error(f"\nErrore nell'elaborazione della regola ID {id_regola}: {e}\n")
+                    # Continua con la prossima regola
+            
+            # Elimina tutte le regole elaborate
+            if id_regole_da_eliminare:
+                # Crea stringa di placeholders per la query IN
+                placeholders = ', '.join(['%s'] * len(id_regole_da_eliminare))
+                
+                # Esegui la query di eliminazione per tutte le regole
+                risultato_eliminazione = esegui_query(
+                    connessione=connessione,
+                    query=f"DELETE FROM eventi_da_monitorare WHERE id IN ({placeholders})",
+                    parametri=tuple(id_regole_da_eliminare),
+                    commit=True,
+                    istogramma=QUERY_DURATIONS_HISTOGRAM
+                )
+                
+                if risultato_eliminazione:
+                    logger.info(f"\nEliminate {len(id_regole_da_eliminare)} regole dal database\n")
+                else:
+                    logger.error("\nErrore nell'eliminazione delle regole dal database\n")
+            
+            return json.dumps(tutti_eventi)
+            
+        finally:
+            chiudi_connessione_db(connessione)
+            
+    except Exception as err:
+        logger.error(f"\nErrore nel recupero e processamento dei monitoraggi attivi: {err}\n")
+        return '{}'
+
+"""
+
+def esegui_query_rest(url):
+        """
+        Esegue una richiesta REST all'API OpenWeather e monitora le metriche relative.
+        
+        Args:
+            url: URL completo per la richiesta REST con parametri
+            
+        Returns:
+            dict: Risposta JSON dell'API
+        """
+        tempo_inizio = time.time_ns()
+        try:
+            # Incrementa il contatore delle richieste
+            REQUEST_OPEN_WEATHER.inc()
+            
+            # Esegue la richiesta HTTP
+            risposta = requests.get(url=url)
+            risposta.raise_for_status()
+            
+            # Converte la risposta in JSON
+            dati_risposta = risposta.json()
+            
+            # Calcola il tempo di risposta
+            tempo_fine = time.time_ns()
+            DELTA_TIME.set(tempo_fine - tempo_inizio)
+            
+            # Verifica il codice di risposta
+            if dati_risposta.get('cod') != 200:
+                ERROR_REQUEST_OPEN_WEATHER.inc()
+                raise Exception(f'Query fallita: {dati_risposta.get("message")}')
+            
+            logger.info(f"\nRisposta API ricevuta: {json.dumps(dati_risposta)}\n")
+            return dati_risposta
+            
+        except requests.JSONDecodeError as errore:
+            ERROR_REQUEST_OPEN_WEATHER.inc()
+            tempo_fine = time.time_ns()
+            DELTA_TIME.set(tempo_fine - tempo_inizio)
+            logger.error(f'\nErrore nella decodifica JSON: {errore}\n')
+            raise SystemExit("Terminazione dopo errore nella decodifica JSON")
+            
+        except requests.HTTPError as errore:
+            ERROR_REQUEST_OPEN_WEATHER.inc()
+            tempo_fine = time.time_ns()
+            DELTA_TIME.set(tempo_fine - tempo_inizio)
+            logger.error(f'\nErrore HTTP: {errore}\n')
+            raise SystemExit("Terminazione dopo errore HTTP")
+            
+        except requests.exceptions.RequestException as errore:
+            ERROR_REQUEST_OPEN_WEATHER.inc()
+            tempo_fine = time.time_ns()
+            DELTA_TIME.set(tempo_fine - tempo_inizio)
+            logger.error(f'\nRichiesta fallita: {errore}\n')
+            raise SystemExit("Terminazione dopo errore nella richiesta")
+            
+        except Exception as errore:
+            logger.error(f'\nErrore generico: {errore}\n')
+            raise SystemExit("Terminazione dopo errore generico")
+
+def formatta_dati(dati):
+    """
+    Formatta i dati restituiti dall'API OpenWeather secondo la logica di business.
     
     Args:
-        topic: Nome del topic Kafka
-        producer: Istanza del producer Kafka
-        messaggio: Messaggio da pubblicare
+        dati: Dizionario JSON restituito dall'API OpenWeather
+        
+    Returns:
+        dict: Dizionario con i dati meteorologici formattati
+    """
+    # Dizionario per i dati formattati
+    dati_formattati = {}
+    
+    # Estrazione dei dati principali con gestione sicura delle chiavi
+    try:
+        # Temperatura, umidità e pressione - usando i nomi corretti per le chiavi
+        dati_formattati['temp_max'] = dati_formattati['temp_min'] = dati["main"]["temp"]
+        dati_formattati['umi_max'] = dati_formattati['umi_min'] = dati["main"]["humidity"]
+        dati_formattati['pressione_max'] = dati_formattati['pressione_min'] = dati["main"]["pressure"]
+        
+        # Vento e nuvole - usando i nomi corretti per le chiavi
+        dati_formattati["vel_vento_max"] = dati_formattati["vel_vento_min"] = dati["wind"]["speed"]
+        dati_formattati["nuvole_max"] = dati_formattati["nuvole_min"] = dati["clouds"]["all"]
+        
+        # Calcolo della direzione del vento
+        direzioni = ["N", "NE", "E", "SE", "S", "SO", "O", "NO"]
+        gradi = dati["wind"]["deg"]
+        indice = round(gradi / 45) % 8
+        dati_formattati["direzione_vento"] = direzioni[indice]
+        
+        # Verifica condizioni meteo
+        condizione = dati["weather"][0]["main"]
+        
+        # Verifica pioggia - sia dal campo weather che dall'oggetto rain se presente
+        dati_formattati["pioggia"] = (condizione == "Rain" or "rain" in dati)
+        
+        # Verifica neve - sia dal campo weather che dall'oggetto snow se presente
+        dati_formattati["neve"] = (condizione == "Snow" or "snow" in dati)
+        
+        # Log dei dati formattati
+        logger.info(f"\nDati meteo formattati: {json.dumps(dati_formattati)}\n")
+        
+    except KeyError as e:
+        logger.error(f"\nErrore nell'estrazione dei dati meteorologici: chiave mancante {e}\n")
+        # Valori predefiniti in caso di errore
+        dati_formattati = {
+            'temp_max': 0, 'temp_min': 0,
+            'umi_max': 0, 'umi_min': 0,
+            'pressione_max': 0, 'pressione_min': 0,
+            'vel_vento_max': 0, 'vel_vento_min': 0,
+            'nuvole_max': 0, 'nuvole_min': 0,
+            'direzione_vento': 'N',
+            'pioggia': False, 'neve': False
+        }
+    
+    return dati_formattati
+
+def controlla_regole(vincoli_utente, dati_api):
+    """
+    Confronta i dati meteo attuali con i vincoli definiti dall'utente.
+    Salva gli eventi corrispondenti ai vincoli violati nella tabella eventi_da_notificare.
+    
+    Args:
+        vincoli_utente: Dizionario contenente i vincoli definiti dall'utente
+        dati_api: Dizionario contenente i dati meteo formattati
+        
+    Returns:
+        dict: Dizionario contenente gli eventi da notificare
+    """    
+    # Lista per memorizzare gli eventi da notificare
+    eventi_da_notificare = []
+    
+    # Numero di righe (utenti) da controllare
+    num_righe = vincoli_utente.get('num_righe', [])
+    
+    # Per ogni riga di vincoli (ciascuna riga corrisponde a un utente)
+    for i in range(len(num_righe)):
+        # Controllo se l'indice è valido per tutti gli array nei vincoli
+        if i >= len(vincoli_utente.get('id_utente', [])):
+            logger.warning(f"\nIndice {i} non valido per id_utente\n")
+            continue
+            
+        # Id dell'utente corrente
+        id_utente = vincoli_utente['id_utente'][i]
+        
+        # Dizionario per memorizzare i vincoli violati per questo utente
+        vincoli_violati = {}
+        
+        # Confronto temperatura massima
+        if 'temp_max' in vincoli_utente and i < len(vincoli_utente['temp_max']):
+            temp_max_vincolo = float(vincoli_utente['temp_max'][i])
+            if dati_api['temp_max'] > temp_max_vincolo:
+                vincoli_violati['temp_max'] = {
+                    'valore_atteso': temp_max_vincolo,
+                    'valore_effettivo': dati_api['temp_max']
+                }
+        
+        # Confronto temperatura minima
+        if 'temp_min' in vincoli_utente and i < len(vincoli_utente['temp_min']):
+            temp_min_vincolo = float(vincoli_utente['temp_min'][i])
+            if dati_api['temp_min'] < temp_min_vincolo:
+                vincoli_violati['temp_min'] = {
+                    'valore_atteso': temp_min_vincolo,
+                    'valore_effettivo': dati_api['temp_min']
+                }
+        
+        # Confronto umidità massima
+        if 'umi_max' in vincoli_utente and i < len(vincoli_utente['umi_max']):
+            umi_max_vincolo = float(vincoli_utente['umi_max'][i])
+            if dati_api['umi_max'] > umi_max_vincolo:
+                vincoli_violati['umi_max'] = {
+                    'valore_atteso': umi_max_vincolo,
+                    'valore_effettivo': dati_api['umi_max']
+                }
+        
+        # Confronto umidità minima
+        if 'umi_min' in vincoli_utente and i < len(vincoli_utente['umi_min']):
+            umi_min_vincolo = float(vincoli_utente['umi_min'][i])
+            if dati_api['umi_min'] < umi_min_vincolo:
+                vincoli_violati['umi_min'] = {
+                    'valore_atteso': umi_min_vincolo,
+                    'valore_effettivo': dati_api['umi_min']
+                }
+        
+        # Confronto pressione massima
+        if 'pressione_max' in vincoli_utente and i < len(vincoli_utente['pressione_max']):
+            pressione_max_vincolo = float(vincoli_utente['pressione_max'][i])
+            if dati_api['pressione_max'] > pressione_max_vincolo:
+                vincoli_violati['pressione_max'] = {
+                    'valore_atteso': pressione_max_vincolo,
+                    'valore_effettivo': dati_api['pressione_max']
+                }
+        
+        # Confronto pressione minima
+        if 'pressione_min' in vincoli_utente and i < len(vincoli_utente['pressione_min']):
+            pressione_min_vincolo = float(vincoli_utente['pressione_min'][i])
+            if dati_api['pressione_min'] < pressione_min_vincolo:
+                vincoli_violati['pressione_min'] = {
+                    'valore_atteso': pressione_min_vincolo,
+                    'valore_effettivo': dati_api['pressione_min']
+                }
+        
+        # Confronto nuvole massime
+        if 'nuvole_max' in vincoli_utente and i < len(vincoli_utente['nuvole_max']):
+            nuvole_max_vincolo = float(vincoli_utente['nuvole_max'][i])
+            if dati_api['nuvole_max'] > nuvole_max_vincolo:
+                vincoli_violati['nuvole_max'] = {
+                    'valore_atteso': nuvole_max_vincolo,
+                    'valore_effettivo': dati_api['nuvole_max']
+                }
+        
+        # Confronto nuvole minime
+        if 'nuvole_min' in vincoli_utente and i < len(vincoli_utente['nuvole_min']):
+            nuvole_min_vincolo = float(vincoli_utente['nuvole_min'][i])
+            if dati_api['nuvole_min'] < nuvole_min_vincolo:
+                vincoli_violati['nuvole_min'] = {
+                    'valore_atteso': nuvole_min_vincolo,
+                    'valore_effettivo': dati_api['nuvole_min']
+                }
+        
+        # Confronto velocità vento massima
+        if 'vel_vento_max' in vincoli_utente and i < len(vincoli_utente['vel_vento_max']):
+            vel_vento_max_vincolo = float(vincoli_utente['vel_vento_max'][i])
+            if dati_api['vel_vento_max'] > vel_vento_max_vincolo:
+                vincoli_violati['vel_vento_max'] = {
+                    'valore_atteso': vel_vento_max_vincolo,
+                    'valore_effettivo': dati_api['vel_vento_max']
+                }
+        
+        # Confronto velocità vento minima
+        if 'vel_vento_min' in vincoli_utente and i < len(vincoli_utente['vel_vento_min']):
+            vel_vento_min_vincolo = float(vincoli_utente['vel_vento_min'][i])
+            if dati_api['vel_vento_min'] < vel_vento_min_vincolo:
+                vincoli_violati['vel_vento_min'] = {
+                    'valore_atteso': vel_vento_min_vincolo,
+                    'valore_effettivo': dati_api['vel_vento_min']
+                }
+        
+        # Confronto direzione vento
+        if 'direzione_vento' in vincoli_utente and i < len(vincoli_utente['direzione_vento']):
+            direzione_vincolo = vincoli_utente['direzione_vento'][i]
+            if dati_api['direzione_vento'] != direzione_vincolo:
+                vincoli_violati['direzione_vento'] = {
+                    'valore_atteso': direzione_vincolo,
+                    'valore_effettivo': dati_api['direzione_vento']
+                }
+        
+        # Se ci sono vincoli violati, crea un evento
+        if vincoli_violati:
+            evento = {
+                'id_utente': id_utente,
+                'vincoli_violati': vincoli_violati,
+                'timestamp': time.time_ns(),
+                'localita': vincoli_utente['localita'][0] if 'localita' in vincoli_utente else "Sconosciuta"
+            }
+            eventi_da_notificare.append(evento)
+            
+            # Salva l'evento nel database
+            try:
+                connessione = inizializza_connessione_db(
+                    host=HOSTNAME, 
+                    porta=PORT, 
+                    utente=USER, 
+                    password=PASSWORD_DB, 
+                    database=DATABASE_SED
+                )
+                
+                if not connessione:
+                    logger.error("\nImpossibile connettersi al database per salvare gli eventi\n")
+                    continue
+                
+                try:
+                    # Converti l'evento in JSON
+                    evento_json = json.dumps(evento)
+                    
+                    # Inserisci nel database
+                    risultato = esegui_query(
+                        connessione=connessione,
+                        query="INSERT INTO eventi_da_notificare (id_utente, eventi, time_stamp, id_monitoraggio) VALUES (%s, %s, CURRENT_TIMESTAMP, %s)",
+                        parametri=(id_utente, evento_json, ID_MONITORAGGIO),
+                        commit=True,
+                        istogramma=QUERY_DURATIONS_HISTOGRAM
+                    )
+                    
+                    if not risultato:
+                        logger.error(f"\nErrore nel salvataggio dell'evento per l'utente {id_utente}\n")
+                    else:
+                        logger.info(f"\nEvento salvato correttamente per l'utente {id_utente}\n")
+                
+                finally:
+                    chiudi_connessione_db(connessione)
+                    
+            except Exception as err:
+                logger.error(f"\nErrore durante il salvataggio dell'evento: {err}\n")
+            
+    # Restituisci gli eventi da notificare
+    return {'eventi': eventi_da_notificare}
+
+
+
+
+
+def callback_consegna(err, msg):
+    """
+    Callback opzionale per-messaggio (attivato da poll() o flush())
+    quando un messaggio è stato consegnato con successo o è fallito definitivamente 
+    (dopo i tentativi).
+    
+    Args:
+        err: Eventuale errore durante la consegna
+        msg: Messaggio Kafka consegnato
+    """
+    if err:
+        logger.error(f'\nErrore nella consegna del messaggio: {err}\n')
+        raise SystemExit("Terminazione dopo errore nella consegna del messaggio a Kafka")
+    else:
+        # Incrementa il contatore delle metriche
+        KAFKA_MESSAGE_DELIVERED.inc()
+        logger.info(f'\nMessaggio consegnato al topic {msg.topic()}, partizione[{msg.partition()}] @ {msg.offset()}\n')
+        
+        try:
+            # Misurazione del tempo di esecuzione per Prometheus
+            tempo_inizio = time.time_ns()
+            
+            # Utilizzo delle utility per interagire con il database
+            connessione = inizializza_connessione_db(
+                host=HOSTNAME, 
+                porta=PORT, 
+                utente=USER, 
+                password=PASSWORD_DB, 
+                database=DATABASE_SED
+            )
+            
+            if not connessione:
+                logger.error("\nImpossibile connettersi al database per eliminare i monitoraggi\n")
+                return
+                
+            # Esecuzione della query per eliminare i monitoraggi completati
+            esegui_query(
+                connessione=connessione,
+                query="DELETE FROM eventi_da_monitorare WHERE id_monitoraggio = %s",
+                parametri=(ID_MONITORAGGIO,),
+                commit=True
+            )
+            
+            # Calcolo e registrazione del tempo di esecuzione
+            tempo_fine = time.time_ns()
+            QUERY_DURATIONS_HISTOGRAM.observe(tempo_fine - tempo_inizio)
+            
+            # Chiusura della connessione
+            chiudi_connessione_db(connessione)
+            
+        except Exception as errore:
+            logger.error(f"\nEccezione durante l'eliminazione dei monitoraggi: {errore}\n")
+            raise SystemExit("Terminazione dopo errore nell'operazione di pulizia del database")
+
+def produci_messaggio_kafka(topic_name, kafka_producer, messaggio):
+    """
+    Produce un messaggio nel topic Kafka specificato.
+    
+    Args:
+        topic_name: Nome del topic Kafka
+        kafka_producer: Istanza del producer Kafka
+        messaggio: Messaggio da inviare (in formato JSON)
         
     Returns:
         bool: True se il messaggio è stato inviato con successo, False altrimenti
     """
-
-    """
     try:
-        producer.produce(topic, value=messaggio)
+        # Pubblicazione sul topic specifico
+        kafka_producer.produce(topic_name, value=messaggio, callback=callback_consegna)
         KAFKA_MESSAGE.inc()
-        producer.poll(0)  # Trigger any callbacks
-        return True
     except BufferError:
-        logger.error(f"Coda del producer locale piena ({len(producer)} messaggi in attesa): riprova")
+        logger.error(f'\nCoda del producer locale piena ({len(kafka_producer)} messaggi in attesa di consegna): riprova\n')
         return False
-    except Exception as e:
-        logger.error(f"Errore nella produzione del messaggio Kafka: {e}")
-        return False"
-    """
+    except Exception as errore:
+        logger.error(f"\nErrore durante la produzione del messaggio: {errore}\n")
+        return False
+    
+    # Attendi fino a quando il messaggio è stato consegnato
+    logger.info("\nIn attesa della consegna del messaggio...\n")
+    kafka_producer.flush()
+    return True
+    
+    
 
 # create Flask application
 app = crea_server()
 
+#crea thread monitoraggio
+
+
 if __name__ == "__main__":
-    # Creazione della tabella monitoraggi_attivi se non esiste
+    # Creazione della tabella eventi_da_monitorare se non esiste
     try:
         # Inizializza la connessione al database
         connessione = inizializza_connessione_db(
@@ -174,31 +706,47 @@ if __name__ == "__main__":
         risultato = esegui_query(
             connessione=connessione,
             crea_tabella=True,
-            nome_tabella="monitoraggi_attivi",
-            definizione_colonne="id INTEGER PRIMARY KEY AUTO_INCREMENT, regole JSON NOT NULL, time_stamp TIMESTAMP NOT NULL, id_monitoraggio VARCHAR(60) NOT NULL, INDEX index_monitoraggio (id_monitoraggio)",
+            nome_tabella="eventi_da_monitorare",
+            definizione_colonne="id INTEGER PRIMARY KEY AUTO_INCREMENT, regole JSON NOT NULL, time_stamp TIMESTAMP NOT NULL, id_monitoraggio VARCHAR(60) NOT NULL, controllato BOOLEAN DEFAULT FALSE, INDEX index_monitoraggio (id_monitoraggio)",
             istogramma=QUERY_DURATIONS_HISTOGRAM
         )
         
         if not risultato:
-            sys.exit("Worker Service terminating: impossibile creare la tabella monitoraggi_attivi\n")
+            sys.exit("SED terminato: impossibile creare la tabella eventi_da_monitorare\n")
             
-        logger.info("Tabella monitoraggi_attivi creata o già esistente")
+        logger.info("\nTabella eventi_da_monitorare creata o già esistente\n")
+
+        #CREAZIONE TAB eventi da notificare
+        risultato = esegui_query(
+            connessione=connessione,
+            crea_tabella=True,
+            nome_tabella="eventi_da_notificare",
+            definizione_colonne="id INTEGER PRIMARY KEY AUTO_INCREMENT, id_utente INTEGER NOT NULL , eventi JSON NOT NULL, time_stamp TIMESTAMP NOT NULL, id_monitoraggio VARCHAR(60) NOT NULL, notificato BOOLEAN DEFAULT FALSE, INDEX index_monitoraggio (id_monitoraggio)",
+            istogramma=QUERY_DURATIONS_HISTOGRAM
+        )
+
+        if not risultato:
+            sys.exit("SED terminato: impossibile creare la tabella eventi_da_notificare\n")
+        
+        logger.info("\nTabella eventi_da_notificare creata o già esistente\n")
+
         
     except Exception as err:
-        logger.error(f"Exception raised! -> {err}")
+        logger.error(f"\nException raised! -> {err}\n")
         try:
             if 'connessione' in locals() and connessione:
                 chiudi_connessione_db(connessione)
         except Exception as exe:
-            logger.error(f"Exception raised in closing connection: {exe}")
+            logger.error(f"\nException raised in closing connection: {exe}\n")
         sys.exit("Exiting after database error...\n")
     finally:
         if 'connessione' in locals() and connessione:
             chiudi_connessione_db(connessione)
     
     # Genera un ID monitoraggio unico
-    ID_MONITORAGGIO = f"{socket.gethostname()}-{time.time()}"
-    logger.info(f"ID monitoraggio generato: {ID_MONITORAGGIO}")
+    ID_MONITORAGGIO = f"{socket.gethostname()}-{time.time()}" # permette di avere più SED che operano in parallelo senza interferire tra loro.
+
+    logger.info(f"\nID monitoraggio generato: {ID_MONITORAGGIO}\n")
     
     # Avvio del server per le metriche Prometheus
     threadMetricsServer = threading.Thread(target=avvia_server)
@@ -214,47 +762,41 @@ if __name__ == "__main__":
         'on_commit': commit_completed
     }
     
-    producer_conf = {
-        'bootstrap.servers': KAFKA_BROKER_2
-    }
-    
     consumer_kafka = confluent_kafka.Consumer(consumer_conf)
-    producer_kafka = confluent_kafka.Producer(producer_conf)
-    
     try:
         consumer_kafka.subscribe([KAFKA_TOPIC_1])  # Sottoscrizione al topic di ingresso
-        logger.info(f"Sottoscrizione al topic {KAFKA_TOPIC_1} effettuata con successo")
+        logger.info(f"\nSottoscrizione al topic {KAFKA_TOPIC_1} effettuata con successo\n")
     except confluent_kafka.KafkaException as ke:
-        logger.error(f"Errore Kafka durante la sottoscrizione: {ke}")
+        logger.error(f"\nErrore Kafka durante la sottoscrizione: {ke}\n")
         consumer_kafka.close()
         sys.exit("Terminazione dopo errore nella sottoscrizione al topic Kafka\n")
 
     try:
-        logger.info("Inizio polling dei messaggi Kafka")
+        logger.info("\nInizio polling dei messaggi Kafka\n")
         while True:
             # Polling dei messaggi nel topic Kafka
-            msg = consumer_kafka.poll(timeout=5.0)
+            msg = consumer_kafka.poll(timeout=TIMER_POLLING)
             
             if msg is None:
                 # Nessun messaggio disponibile entro il timeout
                 continue
             elif msg.error():
-                logger.error(f'Errore Kafka: {msg.error()}')
+                logger.error(f'\nErrore Kafka: {msg.error()}\n')
                 if msg.error().code() == confluent_kafka.KafkaError.UNKNOWN_TOPIC_OR_PART:
                     raise SystemExit("Topic sconosciuto, terminazione")
             else:
                 # Processo dei messaggi Kafka
                 record_value = msg.value()
-                logger.info(f"Messaggio ricevuto: {record_value}")
+                logger.info(f"\nMessaggio ricevuto: {record_value}\n")
                 
                 try:
-                    # Deserializza il messaggio JSON
+                    
+                    #MEMORIZZO MSG KAFKA NEL DB
+                    
+                    # Conversione del dizionario in stringa JSON
                     dati = json.loads(record_value)
-                    
-                    # Estrai le informazioni dal messaggio
-                    lista_id_utenti = dati.get("id_utenti", [])
-                    info_citta = dati.get("città", [])
-                    
+                    dati_json = json.dumps(dati)
+        
                     # Connessione al database
                     connessione = inizializza_connessione_db(
                         host=HOSTNAME, 
@@ -265,67 +807,53 @@ if __name__ == "__main__":
                     )
                     
                     if not connessione:
-                        logger.error("Impossibile connettersi al database durante l'elaborazione del messaggio")
+                        logger.error("\nImpossibile connettersi al database durante l'elaborazione del messaggio\n")
                         continue
                     
                     try:
-                        # Inserisci i monitoraggi attivi nel database
-                        for i in range(len(lista_id_utenti)):
-                            regole_dict = {}
-                            
-                            # Estrai tutte le regole per l'utente corrente
-                            for chiave in dati.keys():
-                                if chiave not in ["id_utenti", "città", "id_righe"]:
-                                    regole_dict[chiave] = dati[chiave][i]
-                            
-                            # Aggiungi le informazioni sulla città
-                            regole_dict["città"] = info_citta
-                            
-                            # Converti il dizionario in JSON
-                            regole_json = json.dumps(regole_dict)
-                            
-                            # Inserisci nel database
-                            risultato = esegui_query(
-                                connessione=connessione,
-                                query="INSERT INTO monitoraggi_attivi (regole, time_stamp, id_monitoraggio) VALUES (%s, CURRENT_TIMESTAMP, %s)",
-                                parametri=(regole_json, ID_MONITORAGGIO),
-                                commit=True,
-                                istogramma=QUERY_DURATIONS_HISTOGRAM
-                            )
-                            
-                            if not risultato:
-                                logger.error(f"Errore nell'inserimento del monitoraggio per l'utente {lista_id_utenti[i]}")
-                    
+                        # Inserisci nel database
+                        risultato = esegui_query(
+                            connessione=connessione,
+                            query="INSERT INTO eventi_da_monitorare (regole, time_stamp, id_monitoraggio) VALUES (%s, CURRENT_TIMESTAMP, %s)",
+                            parametri=(dati_json, ID_MONITORAGGIO),
+                            commit=True,
+                            istogramma=QUERY_DURATIONS_HISTOGRAM
+                        )
+                        
+                        if not risultato:
+                            logger.error(f"\nErrore nella memorizzazione del msg kafka ricevuto\n")
+                        else:
+                            logger.info(f"\Msg Kafka memorizzato correttamente nel DB!\n")
+
+
                     finally:
                         chiudi_connessione_db(connessione)
                     
                     # Commit dell'offset Kafka
                     consumer_kafka.commit(asynchronous=True)
-                 
-                    # Trova i monitoraggi attivi e pubblica in Kafka
-                    monitoraggi = trova_monitoraggi_attivi()
-                    if monitoraggi != '{}':
-                        # Aggiungi timestamp al messaggio
-                        monitoraggi_dict = json.loads(monitoraggi)
-                        monitoraggi_dict['timestamp'] = time.time_ns()
-                        monitoraggi_json = json.dumps(monitoraggi_dict)
-                        
-                        # Pubblica il messaggio
-                        while not produci_messaggio_kafka(KAFKA_TOPIC_2, producer_kafka, monitoraggi_json):
-                            logger.info("Riprova invio messaggio...")
-                            time.sleep(1)
+                
+                    # Avvia il monitoraggio delle regole
+                    eventi_da_inviare = avvia_monitoraggio()                            
           
                 except json.JSONDecodeError:
-                    logger.error(f"Errore nella decodifica del messaggio JSON: {record_value}")
+                    logger.error(f"\nErrore nella decodifica del messaggio JSON: {record_value}\n")
                 except Exception as e:
-                    logger.error(f"Errore nell'elaborazione del messaggio: {e}")
+                    logger.error(f"\nErrore nell'elaborazione del messaggio: {e}\n")
+
+                #Avvia thread per notifica eventi
+                thread_notificatore = avvia_thread_notificatore(INTERVALLO_NOTIFICA)
+                ferma_thread_notificatore() 
 
     except (KeyboardInterrupt, SystemExit):
-        logger.info("Interruzione ricevuta, terminazione in corso...")
+        logger.info("\nInterruzione ricevuta, terminazione in corso...\n")
+        
     finally:
+        # ritardo per consentire al thread di terminare in modo pulito
+        time.sleep(1)
         # Chiusura delle connessioni Kafka
         consumer_kafka.close()
-        logger.info("Connessioni chiuse, terminazione completa")
+        logger.info("\nConnessioni chiuse, terminazione completa\n")
+        
 
 
 

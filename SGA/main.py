@@ -231,13 +231,6 @@ def crea_server():
                                 }
                                 token = jwt.encode(payload, hash_psw, algorithm='HS256')
                                 
-                                """
-                                # Restituisci il token al client
-                                return jsonify({
-                                    "message": "Benvenuto in Weather Sentinel!",
-                                    "token": token
-                                }), 200
-                                """
                                 return f"Benvenuto in Weather Sentinel!\nEcco il tuo Token:\n{token}", 200
                         finally:
                             # Assicurati che la connessione venga chiusa in ogni caso
@@ -336,6 +329,63 @@ def crea_server():
             FAILURE.inc()
             return "Errore: la richiesta deve essere in formato JSON", 400
 
+    @app.route('/utente/<int:id_utente>/email', methods=['GET'])
+    def ottieni_email_utente(id_utente):
+        """
+        Endpoint per recuperare l'email di un utente dato il suo ID.
+        """
+        # Incrementa la metrica delle richieste
+        REQUEST.inc()
+        
+        try:
+            # Inizializza la connessione al database
+            connessione = inizializza_connessione_db(
+                host=HOSTNAME, 
+                porta=PORT, 
+                utente=USER, 
+                password=PASSWORD_DB, 
+                database=DATABASE_SGA
+            )
+            
+            if not connessione:
+                FAILURE.inc()
+                INTERNAL_ERROR.inc()
+                return "Errore nella connessione al database", 500
+            
+            try:
+                # Query per recuperare l'email dato l'ID
+                cursore = esegui_query(
+                    connessione=connessione,
+                    query="SELECT email FROM utenti WHERE id = %s",
+                    parametri=(id_utente,),
+                    istogramma=QUERY_DURATIONS_HISTOGRAM
+                )
+                
+                if not cursore:
+                    FAILURE.inc()
+                    INTERNAL_ERROR.inc()
+                    return "Errore nel recupero dell'email", 500
+                
+                risultato = cursore.fetchone()
+                
+                if not risultato:
+                    FAILURE.inc()
+                    return f"Utente con ID {id_utente} non trovato", 404
+                
+                # Restituisci l'email come JSON
+                RESPONSE_TO_NOTIFIER.inc()
+                return {"id": id_utente, "email": risultato[0]}, 200
+                
+            finally:
+                # Assicurati che la connessione venga chiusa in ogni caso
+                chiudi_connessione_db(connessione)
+                
+        except Exception as err:
+            logger.error(f"Eccezione sollevata! -> {err}")
+            FAILURE.inc()
+            INTERNAL_ERROR.inc()
+            return f"Errore nel recupero dell'email: {str(err)}", 500
+        
     #@app.route('/logout', methods=['POST'])
     # Con JWT non c'è bisogno di una vera operazione di logout lato server,
     # poiché i token sono stateless.
