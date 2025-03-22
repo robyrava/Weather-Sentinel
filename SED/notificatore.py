@@ -11,6 +11,7 @@ import time
 import requests
 import json
 import logging
+from prometheus_client import Counter, Gauge, Histogram
 
 # Configurazione logger
 logging.basicConfig(level=logging.INFO)
@@ -18,6 +19,18 @@ logger = logging.getLogger(__name__)
 
 # Variabile globale per controllare l'esecuzione del thread
 thread_notificatore_attivo = True
+
+# Definizione delle metriche da esporre
+NOTIFICHE_INVIATE = Counter('SED_notifiche_inviate', 'Numero totale di notifiche inviate agli utenti')
+NOTIFICHE_FALLITE = Counter('SED_notifiche_fallite', 'Numero totale di notifiche che non sono state inviate correttamente')
+RICHIESTE_A_SGA = Counter('SED_richieste_a_SGA_dal_notificatore', 'Numero totale di richieste inviate al servizio SGA dal notificatore')
+EVENTI_ELABORATI = Counter('SED_eventi_elaborati', 'Numero totale di eventi elaborati dal notificatore')
+EVENTI_IN_ATTESA = Gauge('SED_eventi_in_attesa_di_notifica', 'Numero di eventi in attesa di essere notificati')
+ISTOGRAMMA_DURATA_QUERY = Histogram(
+    'SED_durata_query_notificatore_nanosecondi', 
+    'Durata delle query al database eseguite dal notificatore in nanosecondi', 
+    buckets=[5000000, 10000000, 25000000, 50000000, 75000000, 100000000, 250000000, 500000000, 750000000, 1000000000, 2500000000, 5000000000, 7500000000, 10000000000]
+)
 
 class ThreadNotificatore(threading.Thread):
     def __init__(self, intervallo, id_monitoraggio):
@@ -62,6 +75,9 @@ class ThreadNotificatore(threading.Thread):
             None: Se l'email non è stata trovata o si è verificato un errore
         """
         try:
+            # Incrementa il contatore delle richieste a SGA
+            RICHIESTE_A_SGA.inc()
+            
             # URL dell'endpoint del SGA per recuperare l'email
             url = f"http://{SGA_HOST}:{PORTA_SGA}/utente/{id_utente}/email"
             
@@ -101,10 +117,15 @@ class ThreadNotificatore(threading.Thread):
             # Per ora, simula l'invio con un log
             logger.info(f"\nINVIO EMAIL a {email}: Notifica evento meteo: {dati_evento}\n")
             
+            # Incrementa il contatore delle notifiche inviate
+            NOTIFICHE_INVIATE.inc()
+            
             return True
             
         except Exception as e:
             logger.error(f"\nErrore nell'invio dell'email a {email}: {e}\n")
+            # Incrementa il contatore delle notifiche fallite
+            NOTIFICHE_FALLITE.inc()
             return False
     
     def controlla_eventi_da_notificare(self):
@@ -112,6 +133,7 @@ class ThreadNotificatore(threading.Thread):
         Controlla se ci sono eventi da notificare nel database e aggiorna il flag 'notificato'.
         """
         try:
+            tempo_inizio = time.time_ns()
             connessione = inizializza_connessione_db(
                 host=HOSTNAME, 
                 porta=PORT, 
@@ -130,6 +152,7 @@ class ThreadNotificatore(threading.Thread):
                     connessione=connessione,
                     query="SELECT id, id_utente, eventi FROM eventi_da_notificare WHERE id_monitoraggio = %s AND notificato = false",
                     parametri=(self.id_monitoraggio,),
+                    istogramma=ISTOGRAMMA_DURATA_QUERY
                 )
                 
                 if not cursore:
@@ -142,8 +165,11 @@ class ThreadNotificatore(threading.Thread):
                 # Se non ci sono risultati, non fare nulla
                 if not risultati or len(risultati) == 0:
                     logger.info("\nNessun evento da notificare trovato\n")
+                    EVENTI_IN_ATTESA.set(0)
                     return
                 
+                # Aggiorna il gauge degli eventi in attesa
+                EVENTI_IN_ATTESA.set(len(risultati))
                 logger.info(f"\nTrovati {len(risultati)} eventi da notificare\n")
                 
                 id_eventi_da_aggiornare = []
@@ -153,6 +179,9 @@ class ThreadNotificatore(threading.Thread):
                     id_evento = risultato[0]
                     id_utente = risultato[1]
                     dati_evento = risultato[2]
+                    
+                    # Incrementa il contatore degli eventi elaborati
+                    EVENTI_ELABORATI.inc()
                     
                     try:
                         # Recupera l'email dell'utente
@@ -173,6 +202,8 @@ class ThreadNotificatore(threading.Thread):
                             
                     except Exception as e:
                         logger.error(f"\nErrore nella notifica dell'evento ID {id_evento}: {e}\n")
+                        # Incrementa il contatore delle notifiche fallite
+                        NOTIFICHE_FALLITE.inc()
                         # Continua con il prossimo evento
                 
                 # Aggiorna tutti gli eventi elaborati
@@ -185,11 +216,14 @@ class ThreadNotificatore(threading.Thread):
                         connessione=connessione,
                         query=f"UPDATE eventi_da_notificare SET notificato = true WHERE id IN ({placeholders})",
                         parametri=tuple(id_eventi_da_aggiornare),
-                        commit=True
+                        commit=True,
+                        istogramma=ISTOGRAMMA_DURATA_QUERY
                     )
                     
                     if risultato_aggiornamento:
                         logger.info(f"\nAggiornati {len(id_eventi_da_aggiornare)} eventi nel database (notificato = true)\n")
+                        # Aggiorna il gauge degli eventi in attesa
+                        EVENTI_IN_ATTESA.dec(len(id_eventi_da_aggiornare))
                     else:
                         logger.error("\nErrore nell'aggiornamento degli eventi nel database\n")
                 

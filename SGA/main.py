@@ -18,17 +18,22 @@ from prometheus_client import Counter, generate_latest, REGISTRY, Gauge, Histogr
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-#METRICHE SGA
-# definition of the metrics to be exposed
-REQUEST = Counter('SGA_requests', 'Total nSGAber of requests received by SGA-service')
-FAILURE = Counter('SGA_failure_requests', 'Total nSGAber of requests received by SGA-service that failed')
-INTERNAL_ERROR = Counter('SGA_internal_http_error', 'Total nSGAber of internal http errors in SGA-service')
-RESPONSE_TO_WMS = Counter('SGA_RESPONSE_TO_WMS', 'Total nSGAber of responses sent to wms-service')
-RESPONSE_TO_NOTIFIER = Counter('SGA_RESPONSE_TO_NOTIFIER', 'Total nSGAber of responses sent to notifier-service')
-REGISTERED_utenti_COUNT = Gauge('SGA_registered_utenti_count', 'Total nSGAber of registered utenti')
-DELTA_TIME = Gauge('SGA_response_time_client', 'Latency beetween instant in which client sends the API CALL and instant in which user-manager responses')
-QUERY_DURATIONS_HISTOGRAM = Histogram('SGA_query_durations_nanoseconds_DB', 'DB query durations in nanoseconds', buckets=[5000000, 10000000, 25000000, 50000000, 75000000, 100000000, 250000000, 500000000, 750000000, 1000000000, 2500000000,5000000000,7500000000,10000000000])
-# buckets indicated because of measuring time in nanoseconds
+# METRICHE SGA
+# Definizione delle metriche da esporre
+RICHIESTE = Counter('SGA_richieste', 'Numero totale di richieste ricevute dal servizio SGA')
+FALLIMENTI = Counter('SGA_richieste_fallite', 'Numero totale di richieste al servizio SGA che sono fallite')
+ERRORI_INTERNI = Counter('SGA_errori_http_interni', 'Numero totale di errori HTTP interni nel servizio SGA')
+RISPOSTE_A_SGM = Counter('SGA_risposte_a_SGM', 'Numero totale di risposte inviate al servizio SGM')
+CONTEGGIO_UTENTI_REGISTRATI = Gauge('SGA_conteggio_utenti_registrati', 'Numero totale di utenti registrati')
+TEMPO_DI_RISPOSTA = Gauge('SGA_tempo_di_risposta_client', 'Latenza tra l istante in cui il client invia la chiamata API e l istante in cui il gestore utenti risponde')
+ISTOGRAMMA_DURATA_QUERY = Histogram(
+    'SGA_durate_query_nanosecondi_DB', 
+    'Durata delle query al database in nanosecondi', 
+    buckets=[5000000, 10000000, 25000000, 50000000, 75000000, 100000000, 250000000, 500000000, 750000000, 1000000000, 2500000000, 5000000000, 7500000000, 10000000000]
+)
+# I bucket sono indicati per misurare il tempo in nanosecondi
+
+
 
 def calcola_hash(input):
     sha256_hash = hashlib.sha256()
@@ -70,7 +75,7 @@ def verifica_token(token, password_hash=None):
                         return None
                     
                     # Recupera la password hash dal database
-                    utente = verifica_utente(connessione, email, QUERY_DURATIONS_HISTOGRAM, restituisci_dettagli=True)
+                    utente = verifica_utente(connessione, email, ISTOGRAMMA_DURATA_QUERY, restituisci_dettagli=True)
                     
                     if not utente or not 'password' in utente:
                         logger.error(f"Utente con email {email} non trovato o senza password")
@@ -107,7 +112,7 @@ def crea_server():
     @app.route('/registrazione', methods=['POST'])
     def registrazione_utente():
         # Incrementa la metrica delle richieste
-        REQUEST.inc()
+        RICHIESTE.inc()
         # Verifica se i dati ricevuti sono in formato JSON
         if request.is_json:
             try:
@@ -129,18 +134,18 @@ def crea_server():
                         )
                         
                         if not connessione:
-                            FAILURE.inc()
-                            INTERNAL_ERROR.inc()
-                            DELTA_TIME.set(time.time_ns() - timestamp_client)
+                            FALLIMENTI.inc()
+                            ERRORI_INTERNI.inc()
+                            TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                             return "Errore nella connessione al database", 500
                         
                         try:
-                            utente_esiste = verifica_utente(connessione, email, QUERY_DURATIONS_HISTOGRAM)
+                            utente_esiste = verifica_utente(connessione, email, ISTOGRAMMA_DURATA_QUERY)
                             
                             if utente_esiste is None:
-                                FAILURE.inc()
-                                INTERNAL_ERROR.inc()
-                                DELTA_TIME.set(time.time_ns() - timestamp_client)
+                                FALLIMENTI.inc()
+                                ERRORI_INTERNI.inc()
+                                TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                                 return "Errore nella verifica dell'email", 500
                             
                             if not utente_esiste:
@@ -148,19 +153,19 @@ def crea_server():
                                 hash_psw = calcola_hash(password)  # salviamo l'hash nel DB per maggiore privacy degli utenti
                                 
                                 # OTTIMIZZATO: Usa la nuova funzione inserisci_utente
-                                if not inserisci_utente(connessione, email, hash_psw, QUERY_DURATIONS_HISTOGRAM):
-                                    FAILURE.inc()
-                                    INTERNAL_ERROR.inc()
-                                    DELTA_TIME.set(time.time_ns() - timestamp_client)
+                                if not inserisci_utente(connessione, email, hash_psw, ISTOGRAMMA_DURATA_QUERY):
+                                    FALLIMENTI.inc()
+                                    ERRORI_INTERNI.inc()
+                                    TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                                     return "Errore nell'inserimento del nuovo utente", 500
                                 
-                                REGISTERED_utenti_COUNT.inc()
-                                DELTA_TIME.set(time.time_ns() - timestamp_client)
+                                CONTEGGIO_UTENTI_REGISTRATI.inc()
+                                TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                                 return "Registrazione avvenuta con successo! Ora prova ad accedere!", 200
                             else:
                                 # L'email esiste già
-                                DELTA_TIME.set(time.time_ns() - timestamp_client)
-                                FAILURE.inc()
+                                TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
+                                FALLIMENTI.inc()
                                 return "Email già in uso! Prova ad accedere!", 401
                         
                         finally:
@@ -169,22 +174,22 @@ def crea_server():
                             
                     except Exception as err:
                         logger.error(f"Eccezione sollevata! -> {err}")
-                        FAILURE.inc()
-                        INTERNAL_ERROR.inc()
-                        DELTA_TIME.set(time.time_ns() - timestamp_client)
+                        FALLIMENTI.inc()
+                        ERRORI_INTERNI.inc()
+                        TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                         return f"Errore durante la registrazione: {str(err)}", 500
 
             except Exception as e:
-                FAILURE.inc()
+                FALLIMENTI.inc()
                 return f"Errore nella lettura dei dati: {str(e)}", 400
         else:
-            FAILURE.inc()
+            FALLIMENTI.inc()
             return "Errore: la richiesta deve essere in formato JSON", 400
     
     @app.route('/login', methods=['POST'])
     def accesso_utente():
         # Incrementa la metrica delle richieste
-        REQUEST.inc()
+        RICHIESTE.inc()
         # Verifica se i dati ricevuti sono in formato JSON
         if request.is_json:
             try:
@@ -207,22 +212,22 @@ def crea_server():
                         )
                         
                         if not connessione:
-                            FAILURE.inc()
-                            INTERNAL_ERROR.inc()
-                            DELTA_TIME.set(time.time_ns() - timestamp_client)
+                            FALLIMENTI.inc()
+                            ERRORI_INTERNI.inc()
+                            TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                             return "Errore nella connessione al database", 500
                         
                         try:
                             # OTTIMIZZATO: Usa la nuova funzione verifica_credenziali
-                            utente = verifica_credenziali(connessione, email, hash_psw, QUERY_DURATIONS_HISTOGRAM)
+                            utente = verifica_credenziali(connessione, email, hash_psw, ISTOGRAMMA_DURATA_QUERY)
                             
                             if utente is None:
                                 # Credenziali non valide
-                                FAILURE.inc()
-                                DELTA_TIME.set(time.time_ns() - timestamp_client)
+                                FALLIMENTI.inc()
+                                TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                                 return "Email o password errata! Riprova!", 401
                             else:
-                                DELTA_TIME.set(time.time_ns() - timestamp_client)
+                                TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                                 
                                 # Crea un token JWT invece di usare la sessione
                                 payload = {
@@ -238,22 +243,22 @@ def crea_server():
                     
                     except Exception as err:
                         logger.error(f"Eccezione sollevata! -> {err}")
-                        FAILURE.inc()
-                        INTERNAL_ERROR.inc()
-                        DELTA_TIME.set(time.time_ns() - timestamp_client)
+                        FALLIMENTI.inc()
+                        ERRORI_INTERNI.inc()
+                        TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                         return f"Errore durante l'accesso: {str(err)}", 500
             
             except Exception as e:
-                FAILURE.inc()
+                FALLIMENTI.inc()
                 return f"Errore nella lettura dei dati: {str(e)}", 400
         else:
-            FAILURE.inc()
+            FALLIMENTI.inc()
             return "Errore: la richiesta deve essere in formato JSON", 400
     
     @app.route('/elimina_account', methods=['POST'])
     def elimina_account():
         # Incrementa la metrica delle richieste
-        REQUEST.inc()
+        RICHIESTE.inc()
         # Verifica se i dati ricevuti sono in formato JSON
         if request.is_json:
             try:
@@ -267,8 +272,8 @@ def crea_server():
                     payload, errore = verifica_token_jwt(intestazione_autorizzazione)
 
                     if errore:
-                        FAILURE.inc()
-                        DELTA_TIME.set(time.time_ns() - timestamp_client)
+                        FALLIMENTI.inc()
+                        TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                         return errore
                     
                     # Token valido, estrai email e procedi
@@ -285,30 +290,30 @@ def crea_server():
                         )
                         
                         if not connessione:
-                            FAILURE.inc()
-                            INTERNAL_ERROR.inc()
-                            DELTA_TIME.set(time.time_ns() - timestamp_client)
+                            FALLIMENTI.inc()
+                            ERRORI_INTERNI.inc()
+                            TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                             return "Errore nella connessione al database", 500
                         
                         try:
                             # Recupera la password hash dell'utente
-                            utente_info = verifica_utente(connessione, email, QUERY_DURATIONS_HISTOGRAM, restituisci_dettagli=True)
+                            utente_info = verifica_utente(connessione, email, ISTOGRAMMA_DURATA_QUERY, restituisci_dettagli=True)
                             
                             if not utente_info or 'password' not in utente_info:
-                                FAILURE.inc()
-                                DELTA_TIME.set(time.time_ns() - timestamp_client)
+                                FALLIMENTI.inc()
+                                TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                                 return "Utente non trovato!", 401
                             
                             # Elimina l'utente
-                            if not elimina_utente(connessione, email, QUERY_DURATIONS_HISTOGRAM):
-                                FAILURE.inc()
-                                INTERNAL_ERROR.inc()
-                                DELTA_TIME.set(time.time_ns() - timestamp_client)
+                            if not elimina_utente(connessione, email, ISTOGRAMMA_DURATA_QUERY):
+                                FALLIMENTI.inc()
+                                ERRORI_INTERNI.inc()
+                                TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                                 return "Errore nell'eliminazione dell'account", 500
                             
                             # Decrementa il contatore degli utenti registrati
-                            REGISTERED_utenti_COUNT.dec()
-                            DELTA_TIME.set(time.time_ns() - timestamp_client)
+                            CONTEGGIO_UTENTI_REGISTRATI.dec()
+                            TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                             return "ACCOUNT ELIMINATO CON SUCCESSO!", 200
                         
                         finally:
@@ -317,16 +322,16 @@ def crea_server():
                     
                     except Exception as err:
                         logger.error(f"Eccezione sollevata! -> {err}")
-                        FAILURE.inc()
-                        INTERNAL_ERROR.inc()
-                        DELTA_TIME.set(time.time_ns() - timestamp_client)
+                        FALLIMENTI.inc()
+                        ERRORI_INTERNI.inc()
+                        TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                         return f"Errore nella connessione al database: {str(err)}", 500
 
             except Exception as e:
-                FAILURE.inc()
+                FALLIMENTI.inc()
                 return f"Errore nella lettura dei dati: {str(e)}", 400
         else:
-            FAILURE.inc()
+            FALLIMENTI.inc()
             return "Errore: la richiesta deve essere in formato JSON", 400
 
     @app.route('/utente/<int:id_utente>/email', methods=['GET'])
@@ -335,7 +340,7 @@ def crea_server():
         Endpoint per recuperare l'email di un utente dato il suo ID.
         """
         # Incrementa la metrica delle richieste
-        REQUEST.inc()
+        RICHIESTE.inc()
         
         try:
             # Inizializza la connessione al database
@@ -348,8 +353,8 @@ def crea_server():
             )
             
             if not connessione:
-                FAILURE.inc()
-                INTERNAL_ERROR.inc()
+                FALLIMENTI.inc()
+                ERRORI_INTERNI.inc()
                 return "Errore nella connessione al database", 500
             
             try:
@@ -358,22 +363,22 @@ def crea_server():
                     connessione=connessione,
                     query="SELECT email FROM utenti WHERE id = %s",
                     parametri=(id_utente,),
-                    istogramma=QUERY_DURATIONS_HISTOGRAM
+                    istogramma=ISTOGRAMMA_DURATA_QUERY
                 )
                 
                 if not cursore:
-                    FAILURE.inc()
-                    INTERNAL_ERROR.inc()
+                    FALLIMENTI.inc()
+                    ERRORI_INTERNI.inc()
                     return "Errore nel recupero dell'email", 500
                 
                 risultato = cursore.fetchone()
                 
                 if not risultato:
-                    FAILURE.inc()
+                    FALLIMENTI.inc()
                     return f"Utente con ID {id_utente} non trovato", 404
                 
                 # Restituisci l'email come JSON
-                RESPONSE_TO_NOTIFIER.inc()
+                RISPOSTE_A_SGM.inc()
                 return {"id": id_utente, "email": risultato[0]}, 200
                 
             finally:
@@ -382,8 +387,8 @@ def crea_server():
                 
         except Exception as err:
             logger.error(f"Eccezione sollevata! -> {err}")
-            FAILURE.inc()
-            INTERNAL_ERROR.inc()
+            FALLIMENTI.inc()
+            ERRORI_INTERNI.inc()
             return f"Errore nel recupero dell'email: {str(err)}", 500
 
     @app.route('/utente/email/<email>', methods=['GET'])
@@ -392,7 +397,7 @@ def crea_server():
         Endpoint per recuperare l'ID di un utente data la sua email.
         """
         # Incrementa la metrica delle richieste
-        REQUEST.inc()
+        RICHIESTE.inc()
 
         try:
             # Inizializza la connessione al database
@@ -405,8 +410,8 @@ def crea_server():
             )
 
             if not connessione:
-                FAILURE.inc()
-                INTERNAL_ERROR.inc()
+                FALLIMENTI.inc()
+                ERRORI_INTERNI.inc()
                 return "Errore nella connessione al database", 500
 
             try:
@@ -415,22 +420,22 @@ def crea_server():
                     connessione=connessione,
                     query="SELECT id FROM utenti WHERE email = %s",
                     parametri=(email,),
-                    istogramma=QUERY_DURATIONS_HISTOGRAM
+                    istogramma=ISTOGRAMMA_DURATA_QUERY
                 )
 
                 if not cursore:
-                    FAILURE.inc()
-                    INTERNAL_ERROR.inc()
+                    FALLIMENTI.inc()
+                    ERRORI_INTERNI.inc()
                     return "Errore nel recupero dell'ID utente", 500
 
                 risultato = cursore.fetchone()
 
                 if not risultato:
-                    FAILURE.inc()
+                    FALLIMENTI.inc()
                     return f"Utente con email {email} non trovato", 404
 
                 # Restituisci l'ID come JSON
-                RESPONSE_TO_WMS.inc()
+                RISPOSTE_A_SGM.inc()
                 return {"id": risultato[0], "email": email}, 200
 
             finally:
@@ -439,8 +444,8 @@ def crea_server():
 
         except Exception as err:
             logger.error(f"Eccezione sollevata! -> {err}")
-            FAILURE.inc()
-            INTERNAL_ERROR.inc()
+            FALLIMENTI.inc()
+            ERRORI_INTERNI.inc()
             return f"Errore nel recupero dell'ID: {str(err)}", 500    
     
     #@app.route('/logout', methods=['POST'])
@@ -483,7 +488,7 @@ if __name__ == '__main__':
             crea_tabella=True,
             nome_tabella="utenti",
             definizione_colonne="id INTEGER PRIMARY KEY AUTO_INCREMENT, email VARCHAR(30) UNIQUE NOT NULL, password VARCHAR(64) NOT NULL",
-            istogramma=QUERY_DURATIONS_HISTOGRAM
+            istogramma=ISTOGRAMMA_DURATA_QUERY
         )
         
         if not utenti_cursor:
@@ -495,7 +500,7 @@ if __name__ == '__main__':
             crea_tabella=True,
             nome_tabella="metriche_to_restore",
             definizione_colonne="id INTEGER PRIMARY KEY AUTO_INCREMENT, metriche JSON NOT NULL",
-            istogramma=QUERY_DURATIONS_HISTOGRAM
+            istogramma=ISTOGRAMMA_DURATA_QUERY
         )
         
         if not metriche_cursor:

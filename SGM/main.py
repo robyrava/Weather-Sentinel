@@ -17,21 +17,18 @@ import requests
 
 
 
-# definition of the metrics to be exposed
-REQUEST = Counter('WMS_requests', 'Total number of requests received by wms-service')
-FAILURE = Counter('WMS_failure_requests', 'Total number of requests received by wms-service that failed')
-INTERNAL_ERROR = Counter('WMS_internal_http_error', 'Total number of internal http errors in wms-service')
-ACTIVE_RULES = Gauge('WMS_active_rules', 'Total number of rules that have been provided to the system')
-KAFKA_MESSAGE = Counter('WMS_kafka_message_number', 'Total number of kafka messages produced by wms-service')
-KAFKA_MESSAGE_DELIVERED = Counter('WMS_kafka_message_delivered_number', 'Total number of kafka messages produced by wms-service that have been delivered correctly')
-REQUEST_TO_UM = Counter('WMS_requests_to_UM', 'Total number of requests sent to um-service')
-DELTA_TIME = Gauge('WMS_response_time_client', 'Latency beetween instant in which client sends the API CALL and instant in which wms-manager responses')
-QUERY_DURATIONS_HISTOGRAM = Histogram('WMS_query_durations_nanoseconds_DB', 'DB query durations in nanoseconds', buckets=[5000000, 10000000, 25000000, 50000000, 75000000, 100000000, 250000000, 500000000, 750000000, 1000000000, 2500000000,5000000000,7500000000,10000000000])
+# definizione delle metriche da esporre
+RICHIESTE_SGM = Counter('richieste_SGM', 'Numero totale di richieste ricevute dal servizio SGM')
+RICHIESTE_FALLITE = Counter('richieste_fallite_SGM', 'Numero totale di richieste ricevute dal servizio SGM che sono fallite')
+ERRORE_INTERNO = Counter('errore_http_interno_SGM', 'Numero totale di errori HTTP interni nel servizio SGM')
+REGOLE_ATTIVE = Gauge('regole_attive_SGM', 'Numero totale di regole fornite al sistema')
+MESSAGGI_KAFKA = Counter('messaggi_kafka_SGM', 'Numero totale di messaggi Kafka prodotti dal servizio SGM')
+MESSAGGI_KAFKA_CONSEGNATI = Counter('messaggi_kafka_consegnati_SGM', 'Numero totale di messaggi Kafka prodotti dal servizio SGM che sono stati consegnati correttamente')
+RICHIESTE_A_SGA = Counter('richieste_a_SGA', 'Numero totale di richieste inviate al servizio SGA')
+TEMPO_DI_RISPOSTA = Gauge('tempo_di_risposta_SGM', 'Latenza tra istante in cui il client invia la chiamata API e istante in cui il servizio SGM risponde')
+ISTOGRAMMA_DURATA_QUERY = Histogram('durata_query_nanosecondi_DB_SGM', 'Durata delle query al database in nanosecondi', buckets=[5000000, 10000000, 25000000, 50000000, 75000000, 100000000, 250000000, 500000000, 750000000, 1000000000, 2500000000, 5000000000, 7500000000, 10000000000])
 
-# METRICHE KAFKA
-MESSAGGIO_KAFKA = Counter('SGM_messaggio_kafka_numero', 'Numero totale di messaggi Kafka prodotti dal servizio SGM')
-MESSAGGIO_KAFKA_CONSEGNATO = Counter('SGM_messaggio_kafka_consegnato_numero', 'Numero totale di messaggi Kafka prodotti dal servizio SGM che sono stati consegnati correttamente')
-# buckets indicated because of measuring time in nanoseconds
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -186,7 +183,7 @@ def recupera_vincoli_pendenti():
             cursore = esegui_query(
                 connessione=connessione,
                 query="SELECT id_città FROM vincoli_utente WHERE TIMESTAMPDIFF(SECOND, timestamp, CURRENT_TIMESTAMP()) > periodo_trigger AND controllato=FALSE GROUP BY id_città",
-                istogramma=QUERY_DURATIONS_HISTOGRAM
+                istogramma=ISTOGRAMMA_DURATA_QUERY
             )
             
             if not cursore:
@@ -201,7 +198,7 @@ def recupera_vincoli_pendenti():
                     connessione=connessione,
                     query="UPDATE vincoli_utente SET controllato=TRUE WHERE TIMESTAMPDIFF(SECOND, timestamp, CURRENT_TIMESTAMP()) > periodo_trigger AND controllato=FALSE",
                     commit=True,
-                    istogramma=QUERY_DURATIONS_HISTOGRAM
+                    istogramma=ISTOGRAMMA_DURATA_QUERY
                 )
                 
                 if not update_cursore:
@@ -215,7 +212,7 @@ def recupera_vincoli_pendenti():
                 dizionario_json_finale = dict()
                 
                 # CREO MESSAGGIO KAFKA
-                messaggio = crea_messaggio_kafka(dizionario_json_finale, id_città, connessione, QUERY_DURATIONS_HISTOGRAM)
+                messaggio = crea_messaggio_kafka(dizionario_json_finale, id_città, connessione, ISTOGRAMMA_DURATA_QUERY)
                 
                 if messaggio:
                     lista_messaggi_kafka.append(messaggio)
@@ -272,7 +269,7 @@ def callback_consegna(err, msg):
                         query="UPDATE vincoli_utente SET controllato=FALSE WHERE id = %s",
                         parametri=(str(id),),
                         commit=True,
-                        istogramma=QUERY_DURATIONS_HISTOGRAM
+                        istogramma=ISTOGRAMMA_DURATA_QUERY
                     )
                     
                     if not risultato:
@@ -289,7 +286,7 @@ def callback_consegna(err, msg):
         raise SystemExit("Uscita dopo errore nella consegna del messaggio al broker Kafka\n")
     
     else:
-        MESSAGGIO_KAFKA_CONSEGNATO.inc()
+        MESSAGGI_KAFKA_CONSEGNATI.inc()
         logger.info('%% Messaggio consegnato al topic %s, partizione[%d] @ %d\n' %
                     (msg.topic(), msg.partition(), msg.offset()))
         dizionario_messaggio = json.loads(msg.value())
@@ -319,7 +316,7 @@ def callback_consegna(err, msg):
                         query="UPDATE vincoli_utente SET timestamp = CURRENT_TIMESTAMP(), controllato=FALSE WHERE id = %s",
                         parametri=(str(id),),
                         commit=True,
-                        istogramma=QUERY_DURATIONS_HISTOGRAM
+                        istogramma=ISTOGRAMMA_DURATA_QUERY
                     )
                     
                     if not risultato:
@@ -350,7 +347,7 @@ def produci_messaggio_kafka(nome_topic, produttore_kafka, messaggio):
     # Pubblica sul topic specifico
     try:
         produttore_kafka.produce(nome_topic, value=messaggio, callback=callback_consegna)
-        MESSAGGIO_KAFKA.inc()  # Incrementa il contatore delle metriche
+        MESSAGGI_KAFKA.inc()  # Incrementa il contatore delle metriche
         logger.info(f"Messaggio inviato al broker Kafka: {messaggio}\n" )
     except BufferError:
         logger.error(
@@ -432,6 +429,9 @@ def ottieni_id_utente_da_email(email):
         None: Se l'ID non è stato trovato o si è verificato un errore
     """
     try:
+        # Incrementa il contatore di richieste al servizio SGA
+        RICHIESTE_A_SGA.inc()
+        
         # URL dell'endpoint del SGA per recuperare l'ID utente
         url = f"http://{SGA_HOST}:{PORTA_SGA}/utente/email/{email}"
         
@@ -453,7 +453,6 @@ def ottieni_id_utente_da_email(email):
         logger.error(f"\nEccezione durante il recupero dell'ID per l'utente {email}: {e}\n")
         return None
 
-
 def avvia_server():
     
     hostname = socket.gethostname()
@@ -472,7 +471,7 @@ def crea_server():
         Utilizza il token JWT per l'autenticazione.
         """
         # Incrementa la metrica delle richieste
-        REQUEST.inc()
+        RICHIESTE_SGM.inc()
         # Verifica se i dati ricevuti sono in formato JSON
         if request.is_json:
             try:
@@ -487,8 +486,8 @@ def crea_server():
                     payload, errore = verifica_token_jwt(intestazione_autorizzazione)
 
                     if errore:
-                        FAILURE.inc()
-                        DELTA_TIME.set(time.time_ns() - timestamp_client)
+                        RICHIESTE_FALLITE.inc()
+                        TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                         return errore
                         
                     # Token valido, estrai email e procedi
@@ -498,8 +497,8 @@ def crea_server():
                     id_utente = ottieni_id_utente_da_email(email_utente)
                     
                     if id_utente is None:
-                        FAILURE.inc()
-                        DELTA_TIME.set(time.time_ns() - timestamp_client)
+                        RICHIESTE_FALLITE.inc()
+                        TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                         return "Utente non trovato nel sistema", 401
                     
                     #Estrazione dei dati della città e delle regole
@@ -544,9 +543,9 @@ def crea_server():
 
                         #RECUPERO ID UTENTE DAL DATABASE
                         if not connessione_SGA:
-                            FAILURE.inc()
-                            INTERNAL_ERROR.inc()
-                            DELTA_TIME.set(time.time_ns() - timestamp_client)
+                            RICHIESTE_FALLITE.inc()
+                            ERRORE_INTERNO.inc()
+                            TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                             return "Errore nella connessione al database", 500
                         
                         try:
@@ -555,21 +554,21 @@ def crea_server():
                                 connessione_SGA,
                                 query="SELECT id FROM utenti WHERE email = %s",
                                 parametri=(email_utente,),
-                                istogramma=QUERY_DURATIONS_HISTOGRAM
+                                istogramma=ISTOGRAMMA_DURATA_QUERY
                             )
                             
                             if not cursore_utente:
-                                FAILURE.inc()
-                                INTERNAL_ERROR.inc()
-                                DELTA_TIME.set(time.time_ns() - timestamp_client)
+                                RICHIESTE_FALLITE.inc()
+                                ERRORE_INTERNO.inc()
+                                TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                                 return "Errore nella query di ricerca utente", 500
                                 
                             utente = cursore_utente.fetchone()
                             
                             if not utente:
                                 logger.error(f"Utente con email {email_utente} non trovato nel database")
-                                FAILURE.inc()
-                                DELTA_TIME.set(time.time_ns() - timestamp_client)
+                                RICHIESTE_FALLITE.inc()
+                                TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                                 return "Utente non trovato nel database", 401
                                 
                             id_utente = utente[0]
@@ -579,13 +578,13 @@ def crea_server():
                                 connessione_SGM,
                                 query="SELECT * FROM citta WHERE ROUND(latitudine, 3) = %s AND ROUND(longitudine, 3) = %s AND città = %s",
                                 parametri=(str(latitudine_arrotondata), str(longitudine_arrotondata), nome_città),
-                                istogramma=QUERY_DURATIONS_HISTOGRAM
+                                istogramma=ISTOGRAMMA_DURATA_QUERY
                             )
                             
                             if not cursore_citta:
-                                FAILURE.inc()
-                                INTERNAL_ERROR.inc()
-                                DELTA_TIME.set(time.time_ns() - timestamp_client)
+                                RICHIESTE_FALLITE.inc()
+                                ERRORE_INTERNO.inc()
+                                TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                                 return "Errore nella query di ricerca città", 500
                                 
                             riga = cursore_citta.fetchone()
@@ -598,13 +597,13 @@ def crea_server():
                                     query="INSERT INTO citta (città, latitudine, longitudine, codice_postale, codice_stato) VALUES (%s, %s, %s, %s, %s)",
                                     parametri=(nome_città, str(latitudine_arrotondata), str(longitudine_arrotondata), codice_postale, codice_stato),
                                     commit=True,
-                                    istogramma=QUERY_DURATIONS_HISTOGRAM
+                                    istogramma=ISTOGRAMMA_DURATA_QUERY
                                 )
                                 
                                 if not risultato_inserimento:
-                                    FAILURE.inc()
-                                    INTERNAL_ERROR.inc()
-                                    DELTA_TIME.set(time.time_ns() - timestamp_client)
+                                    RICHIESTE_FALLITE.inc()
+                                    ERRORE_INTERNO.inc()
+                                    TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                                     return "Errore nell'inserimento della nuova città", 500
                                     
                                 # Ottieni l'ID della città appena inserita
@@ -620,13 +619,13 @@ def crea_server():
                                 connessione_SGM,
                                 query="SELECT * FROM vincoli_utente WHERE id_utente = %s AND id_città = %s",
                                 parametri=(str(id_utente), str(id_città)),
-                                istogramma=QUERY_DURATIONS_HISTOGRAM
+                                istogramma=ISTOGRAMMA_DURATA_QUERY
                             )
                             
                             if not cursore_vincoli:
-                                FAILURE.inc()
-                                INTERNAL_ERROR.inc()
-                                DELTA_TIME.set(time.time_ns() - timestamp_client)
+                                RICHIESTE_FALLITE.inc()
+                                ERRORE_INTERNO.inc()
+                                TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                                 return "Errore nella query di ricerca vincoli", 500
                                 
                             risultato_vincoli = cursore_vincoli.fetchone()
@@ -638,13 +637,13 @@ def crea_server():
                                     query="UPDATE vincoli_utente SET regole = %s WHERE id_utente = %s AND id_città = %s",
                                     parametri=(vincoli_json, str(id_utente), str(id_città)),
                                     commit=True,
-                                    istogramma=QUERY_DURATIONS_HISTOGRAM
+                                    istogramma=ISTOGRAMMA_DURATA_QUERY
                                 )
                                 
                                 if not risultato_aggiornamento_regole:
-                                    FAILURE.inc()
-                                    INTERNAL_ERROR.inc()
-                                    DELTA_TIME.set(time.time_ns() - timestamp_client)
+                                    RICHIESTE_FALLITE.inc()
+                                    ERRORE_INTERNO.inc()
+                                    TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                                     return "Errore nell'aggiornamento delle regole", 500
                                 
                                 risultato_aggiornamento_periodo = esegui_query(
@@ -652,16 +651,16 @@ def crea_server():
                                     query="UPDATE vincoli_utente SET periodo_trigger = %s WHERE id_utente = %s AND id_città = %s",
                                     parametri=(str(periodo_trigger), str(id_utente), str(id_città)),
                                     commit=True,
-                                    istogramma=QUERY_DURATIONS_HISTOGRAM
+                                    istogramma=ISTOGRAMMA_DURATA_QUERY
                                 )
                                 
                                 if not risultato_aggiornamento_periodo:
-                                    FAILURE.inc()
-                                    INTERNAL_ERROR.inc()
-                                    DELTA_TIME.set(time.time_ns() - timestamp_client)
+                                    RICHIESTE_FALLITE.inc()
+                                    ERRORE_INTERNO.inc()
+                                    TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                                     return "Errore nell'aggiornamento del periodo trigger", 500
                                     
-                                DELTA_TIME.set(time.time_ns() - timestamp_client)
+                                TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                                 return "Vincoli utente aggiornati correttamente!", 200
                             else:
                                 # Inserisci nuovi vincoli
@@ -670,17 +669,17 @@ def crea_server():
                                     query="INSERT INTO vincoli_utente (id_utente, id_città, regole, timestamp, periodo_trigger, controllato) VALUES(%s, %s, %s, CURRENT_TIMESTAMP, %s, FALSE)",
                                     parametri=(str(id_utente), str(id_città), vincoli_json, str(periodo_trigger)),
                                     commit=True,
-                                    istogramma=QUERY_DURATIONS_HISTOGRAM
+                                    istogramma=ISTOGRAMMA_DURATA_QUERY
                                 )
                                 
                                 if not risultato_inserimento:
-                                    FAILURE.inc()
-                                    INTERNAL_ERROR.inc()
-                                    DELTA_TIME.set(time.time_ns() - timestamp_client)
+                                    RICHIESTE_FALLITE.inc()
+                                    ERRORE_INTERNO.inc()
+                                    TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                                     return "Errore nell'inserimento dei nuovi vincoli", 500
                                     
-                                ACTIVE_RULES.inc()
-                                DELTA_TIME.set(time.time_ns() - timestamp_client)
+                                REGOLE_ATTIVE.inc()
+                                TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                                 return "Nuovi vincoli utente inseriti correttamente!", 200
                         
                         finally:
@@ -691,16 +690,16 @@ def crea_server():
                             
                     except Exception as err:
                         logger.error(f"Eccezione sollevata! -> {err}")
-                        FAILURE.inc()
-                        INTERNAL_ERROR.inc()
-                        DELTA_TIME.set(time.time_ns() - timestamp_client)
+                        RICHIESTE_FALLITE.inc()
+                        ERRORE_INTERNO.inc()
+                        TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                         return f"Errore nella connessione al database: {str(err)}", 500
 
             except Exception as e:
-                FAILURE.inc()
+                RICHIESTE_FALLITE.inc()
                 return f"Errore nella lettura dei dati: {str(e)}", 400
         else:
-            FAILURE.inc()
+            RICHIESTE_FALLITE.inc()
             return "Errore: la richiesta deve essere in formato JSON", 400
 
     @app.route('/elimina_vincoli_utente', methods=['POST'])
@@ -710,7 +709,7 @@ def crea_server():
         Usa il token JWT per autenticare l'utente.
         """
         # Incrementa la metrica delle richieste
-        REQUEST.inc()
+        RICHIESTE_SGM.inc()
         # Verifica se i dati ricevuti sono in formato JSON
         if request.is_json:
             try:
@@ -724,8 +723,8 @@ def crea_server():
                 payload, errore = verifica_token_jwt(intestazione_autorizzazione)
 
                 if errore:
-                    FAILURE.inc()
-                    DELTA_TIME.set(time.time_ns() - timestamp_client)
+                    RICHIESTE_FALLITE.inc()
+                    TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                     return errore
                 
                 # Token valido, estrai email e procedi
@@ -735,8 +734,8 @@ def crea_server():
                 id_utente = ottieni_id_utente_da_email(email_utente)
                 
                 if id_utente is None:
-                    FAILURE.inc()
-                    DELTA_TIME.set(time.time_ns() - timestamp_client)
+                    RICHIESTE_FALLITE.inc()
+                    TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                     return "Utente non trovato nel sistema", 401
                 
                 try:
@@ -750,9 +749,9 @@ def crea_server():
                     )
                     
                     if not connessione_SGM:
-                        FAILURE.inc()
-                        INTERNAL_ERROR.inc()
-                        DELTA_TIME.set(time.time_ns() - timestamp_client)
+                        RICHIESTE_FALLITE.inc()
+                        ERRORE_INTERNO.inc()
+                        TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                         return "Errore nella connessione al database", 500
                     
                     try:
@@ -775,21 +774,21 @@ def crea_server():
                             connessione_SGM,
                             query="SELECT * FROM citta WHERE ROUND(latitudine, 3) = %s AND ROUND(longitudine, 3) = %s AND città = %s",
                             parametri=(str(latitudine_arrotondata), str(longitudine_arrotondata), nome_città),
-                            istogramma=QUERY_DURATIONS_HISTOGRAM
+                            istogramma=ISTOGRAMMA_DURATA_QUERY
                         )
                         
                         if not cursore_citta:
-                            FAILURE.inc()
-                            INTERNAL_ERROR.inc()
-                            DELTA_TIME.set(time.time_ns() - timestamp_client)
+                            RICHIESTE_FALLITE.inc()
+                            ERRORE_INTERNO.inc()
+                            TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                             return "Errore nella query di ricerca città", 500
                             
                         riga_citta = cursore_citta.fetchone()
                         
                         if not riga_citta:
                             logger.error("Non esiste una città con questa latitudine e longitudine\n")
-                            FAILURE.inc()
-                            DELTA_TIME.set(time.time_ns() - timestamp_client)
+                            RICHIESTE_FALLITE.inc()
+                            TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                             return "Errore, non esistono città da eliminare con questi parametri", 400
                         
                         id_città = riga_citta[0]
@@ -800,17 +799,17 @@ def crea_server():
                             query="DELETE FROM vincoli_utente WHERE id_utente = %s AND id_città = %s",
                             parametri=(str(id_utente), str(id_città)),
                             commit=True,
-                            istogramma=QUERY_DURATIONS_HISTOGRAM
+                            istogramma=ISTOGRAMMA_DURATA_QUERY
                         )
                         
                         if not risultato:
-                            FAILURE.inc()
-                            INTERNAL_ERROR.inc()
-                            DELTA_TIME.set(time.time_ns() - timestamp_client)
+                            RICHIESTE_FALLITE.inc()
+                            ERRORE_INTERNO.inc()
+                            TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                             return "Errore nell'eliminazione dei vincoli utente", 500
                             
-                        ACTIVE_RULES.dec()
-                        DELTA_TIME.set(time.time_ns() - timestamp_client)
+                        REGOLE_ATTIVE.dec()
+                        TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                         return "Vincoli utente eliminati correttamente", 200
                     
                     finally:
@@ -819,16 +818,16 @@ def crea_server():
                         
                 except Exception as err:
                     logger.error(f"Eccezione sollevata! -> {err}")
-                    FAILURE.inc()
-                    INTERNAL_ERROR.inc()
-                    DELTA_TIME.set(time.time_ns() - timestamp_client)
+                    RICHIESTE_FALLITE.inc()
+                    ERRORE_INTERNO.inc()
+                    TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                     return f"Errore nella connessione al database: {str(err)}", 500
                     
             except Exception as e:
-                FAILURE.inc()
+                RICHIESTE_FALLITE.inc()
                 return f"Errore nella lettura dei dati: {str(e)}", 400
         else:
-            FAILURE.inc()
+            RICHIESTE_FALLITE.inc()
             return "Errore: la richiesta deve essere in formato JSON", 400
 
     @app.route('/mostra_regole', methods=['GET'])
@@ -838,7 +837,7 @@ def crea_server():
         Usa il token JWT per autenticare l'utente.
         """
         # Incrementa la metrica delle richieste
-        REQUEST.inc()
+        RICHIESTE_SGM.inc()
         # Verifica se i dati ricevuti sono in formato JSON
         if request.is_json:
             try:
@@ -853,8 +852,8 @@ def crea_server():
                     payload, errore = verifica_token_jwt(intestazione_autorizzazione)
 
                     if errore:
-                        FAILURE.inc()
-                        DELTA_TIME.set(time.time_ns() - timestamp_client)
+                        RICHIESTE_FALLITE.inc()
+                        TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                         return errore
 
                     # Token valido, estrai email e procedi
@@ -864,8 +863,8 @@ def crea_server():
                     id_utente = ottieni_id_utente_da_email(email_utente)
                     
                     if id_utente is None:
-                        FAILURE.inc()
-                        DELTA_TIME.set(time.time_ns() - timestamp_client)
+                        RICHIESTE_FALLITE.inc()
+                        TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                         return "Utente non trovato nel sistema", 401
                     
                     try:
@@ -879,9 +878,9 @@ def crea_server():
                         )
                         
                         if not connessione_SGM:
-                            FAILURE.inc()
-                            INTERNAL_ERROR.inc()
-                            DELTA_TIME.set(time.time_ns() - timestamp_client)
+                            RICHIESTE_FALLITE.inc()
+                            ERRORE_INTERNO.inc()
+                            TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                             return "Errore nella connessione al database", 500
                         
                         try:
@@ -890,20 +889,20 @@ def crea_server():
                                 connessione_SGM,
                                 query="SELECT id_città, regole, periodo_trigger FROM vincoli_utente WHERE id_utente = %s",
                                 parametri=(str(id_utente),),
-                                istogramma=QUERY_DURATIONS_HISTOGRAM
+                                istogramma=ISTOGRAMMA_DURATA_QUERY
                             )
                             
                             if not cursore_vincoli:
-                                FAILURE.inc()
-                                INTERNAL_ERROR.inc()
-                                DELTA_TIME.set(time.time_ns() - timestamp_client)
+                                RICHIESTE_FALLITE.inc()
+                                ERRORE_INTERNO.inc()
+                                TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                                 return "Errore nella query di ricerca vincoli", 500
                                 
                             righe = cursore_vincoli.fetchall()
                             
                             if not righe:
-                                FAILURE.inc()
-                                DELTA_TIME.set(time.time_ns() - timestamp_client)
+                                RICHIESTE_FALLITE.inc()
+                                TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                                 return "Non ci sono regole inserite! Inserisci prima città, regole e periodo trigger!", 400
                             
                             # Costruisci la lista delle regole
@@ -918,7 +917,7 @@ def crea_server():
                                     connessione_SGM,
                                     query="SELECT città, codice_postale, codice_stato FROM citta WHERE id = %s",
                                     parametri=(str(id_città),),
-                                    istogramma=QUERY_DURATIONS_HISTOGRAM
+                                    istogramma=ISTOGRAMMA_DURATA_QUERY
                                 )
                                 
                                 if not cursore_città:
@@ -950,7 +949,7 @@ def crea_server():
                             
                             #Formatta la risposta
                             regole_formattate = formatta_risposta_regole(lista_regole)
-                            DELTA_TIME.set(time.time_ns() - timestamp_client)
+                            TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                             return f"LE TUE REGOLE: <br><br> {regole_formattate}", 200
                         
                         finally:
@@ -959,16 +958,16 @@ def crea_server():
                     
                     except Exception as err:
                         logger.error(f"Eccezione sollevata! -> {err}")
-                        FAILURE.inc()
-                        INTERNAL_ERROR.inc()
-                        DELTA_TIME.set(time.time_ns() - timestamp_client)
+                        RICHIESTE_FALLITE.inc()
+                        ERRORE_INTERNO.inc()
+                        TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
                         return f"Errore nel database: {str(err)}", 500
         
             except Exception as e:
-                FAILURE.inc()
+                RICHIESTE_FALLITE.inc()
                 return f"Errore nella lettura dei dati: {str(e)}", 400
         else:
-            FAILURE.inc()
+            RICHIESTE_FALLITE.inc()
             return "Errore: la richiesta deve essere in formato JSON", 400
 
     @app.route('/metriche', methods=['GET'])
@@ -1003,7 +1002,7 @@ if __name__ == '__main__':
             crea_tabella=True,
             nome_tabella="citta",
             definizione_colonne="id INTEGER PRIMARY KEY AUTO_INCREMENT, città VARCHAR(100) NOT NULL, latitudine FLOAT NOT NULL, longitudine FLOAT NOT NULL, codice_postale VARCHAR(10) NOT NULL, codice_stato VARCHAR(70) NOT NULL, UNIQUE KEY posizione (città, latitudine, longitudine)",
-            istogramma=QUERY_DURATIONS_HISTOGRAM
+            istogramma=ISTOGRAMMA_DURATA_QUERY
         )
         if not citta_cursor:
             sys.exit("User Manager terminating: impossibile creare la tabella utenti\n")
@@ -1014,7 +1013,7 @@ if __name__ == '__main__':
             crea_tabella=True,
             nome_tabella="vincoli_utente",
             definizione_colonne="id INTEGER PRIMARY KEY AUTO_INCREMENT, id_utente INTEGER NOT NULL, id_città INTEGER NOT NULL, regole JSON NOT NULL, timestamp TIMESTAMP NOT NULL, periodo_trigger INTEGER NOT NULL, controllato BOOLEAN NOT NULL DEFAULT FALSE, FOREIGN KEY (id_città) REFERENCES citta(id), UNIQUE KEY utente_città_id (id_utente, id_città)",
-            istogramma=QUERY_DURATIONS_HISTOGRAM
+            istogramma=ISTOGRAMMA_DURATA_QUERY
         )
         if not citta_cursor:
             sys.exit("User Manager terminating: impossibile creare la tabella vincoli_utente\n")
