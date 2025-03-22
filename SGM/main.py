@@ -521,17 +521,15 @@ def crea_server():
                     del dati_dict['città']
                     # Converti le regole in stringa JSON
                     vincoli_json = json.dumps(dati_dict)
+
+                    # Ottieni l'ID utente tramite chiamata API al servizio SGA
+                    id_utente = ottieni_id_utente_da_email(email_utente)
+                    if id_utente is None:
+                            RICHIESTE_FALLITE.inc()
+                            TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
+                            return "Utente non trovato nel sistema", 401
                     
                     try:
-                        # Inizializza la connessione al database
-                        connessione_SGA = inizializza_connessione_db(
-                            host=HOSTNAME, 
-                            porta=PORT, 
-                            utente=USER, 
-                            password=PASSWORD_DB, 
-                            database=DATABASE_SGA
-                        )
-
                         # Inizializza la connessione al database
                         connessione_SGM = inizializza_connessione_db(
                             host=HOSTNAME, 
@@ -540,38 +538,9 @@ def crea_server():
                             password=PASSWORD_DB, 
                             database=DATABASE_SGM
                         )
-
-                        #RECUPERO ID UTENTE DAL DATABASE
-                        if not connessione_SGA:
-                            RICHIESTE_FALLITE.inc()
-                            ERRORE_INTERNO.inc()
-                            TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
-                            return "Errore nella connessione al database", 500
                         
                         try:
-                            # Recupera ID utente dall'email
-                            cursore_utente = esegui_query(
-                                connessione_SGA,
-                                query="SELECT id FROM utenti WHERE email = %s",
-                                parametri=(email_utente,),
-                                istogramma=ISTOGRAMMA_DURATA_QUERY
-                            )
                             
-                            if not cursore_utente:
-                                RICHIESTE_FALLITE.inc()
-                                ERRORE_INTERNO.inc()
-                                TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
-                                return "Errore nella query di ricerca utente", 500
-                                
-                            utente = cursore_utente.fetchone()
-                            
-                            if not utente:
-                                logger.error(f"Utente con email {email_utente} non trovato nel database")
-                                RICHIESTE_FALLITE.inc()
-                                TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
-                                return "Utente non trovato nel database", 401
-                                
-                            id_utente = utente[0]
                             
                             # RECUOERA ID CITTÀ DAL DATABASE
                             cursore_citta = esegui_query(
@@ -683,8 +652,6 @@ def crea_server():
                                 return "Nuovi vincoli utente inseriti correttamente!", 200
                         
                         finally:
-                            # Assicurati che la connessione venga chiusa in ogni caso
-                            chiudi_connessione_db(connessione_SGA)
                             chiudi_connessione_db(connessione_SGM)
 
                             
