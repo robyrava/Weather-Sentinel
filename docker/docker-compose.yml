@@ -1,16 +1,249 @@
 services:
   zookeeper:
     image: confluentinc/cp-zookeeper:latest
+    container_name: zookeeper
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - weather_network
+    restart: always
+    volumes:
+      - zookeeper_data_volume:/var/lib/zookeeper/data
+      - zookeeper_log_volume:/var/lib/zookeeper/log
+      - zookeeper_secrets_volume:/etc/zookeeper/secrets
 
   kafka:
     image: confluentinc/cp-kafka:latest
+    container_name: kafka-service
     depends_on:
       - zookeeper
-    ports:
-      - 9092:9092
+    expose:
+      - "9092:9092"
     environment:
+      KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "kafka:29092", "--list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s 
+    networks:
+      - weather_network
+    restart: always
+    volumes:
+      - kafka_secrets_volume:/etc/kafka/secrets
+      - kafka_data_volume:/var/lib/kafka/data
+
+  # Database SGA
+  sga_db:
+    image: mysql:latest
+    container_name: sga_db
+    environment:
+      MYSQL_ROOT_PASSWORD: ${SGA_DB_PASSWORD:-1234}
+      MYSQL_DATABASE: SGA_db
+    volumes:
+      - sga_volume:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    networks:
+      - weather_network
+    restart: always
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${SGM_DB_PASSWORD:-1234}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+  # Service SGA (Sistema Gestione Account)
+  sga_service:
+    container_name: sga-service
+    build:
+      context: ../
+      dockerfile: SGA/Dockerfile
+    image: sga_service_image:latest
+    depends_on:
+      sga_db:
+        condition: service_healthy
+    ports:
+      - "50053:50053"
+    environment:
+      HOSTNAME: "sga_db"
+      PORT: "3306"
+      USER: "root"
+      PASSWORD_DB: "${SGA_DB_PASSWORD:-1234}"
+      DATABASE_SGA: "SGA_db"
+      HOST: "0.0.0.0"
+      PORTA_SGA: "50053"
+    networks:
+      - weather_network
+    restart: always
+
+  # Database SGM
+  sgm_db:
+    image: mysql:latest
+    container_name: sgm_db
+    environment:
+      MYSQL_ROOT_PASSWORD: ${SGM_DB_PASSWORD:-1234}
+      MYSQL_DATABASE: SGM_db
+    volumes:
+      - sgm_volume:/var/lib/mysql
+    ports:
+      - "3307:3306" 
+    networks:
+      - weather_network
+    restart: always
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${SGM_DB_PASSWORD:-1234}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Service SGM (Sistema Gestione Meteo)
+  sgm_service:
+    container_name: sgm-service
+    build:
+      context: ../
+      dockerfile: SGM/Dockerfile
+    image: sgm_service_image:latest
+    depends_on:
+      sgm_db:
+        condition: service_healthy
+      sga_service:
+        condition: service_started
+      kafka:
+        condition: service_healthy
+    ports:
+      - "50054:50054"
+    environment:
+      HOSTNAME: "sgm_db"
+      PORT: "3306"
+      USER: "root"
+      PASSWORD_DB: "${SGM_DB_PASSWORD:-1234}"
+      DATABASE_SGM: "SGM_db"
+      DATABASE_SGA: "SGA_db"
+      SGA_HOST: "sga-service"
+      HOST: "0.0.0.0"
+      PORTA_SGM: "50054"
+      PORTA_SGA: "50053"
+      KAFKA_BROKER: "kafka:29092"
+      KAFKA_TOPIC: "aggiornamento_eventi"
+      #INTERVALLO_PRODUZIONE_NOTIFICHE_KAFKA: "60"
+    networks:
+      - weather_network
+    restart: always
+
+  # Database SED
+  sed_db:
+    image: mysql:latest
+    container_name: sed_db
+    environment:
+      MYSQL_ROOT_PASSWORD: ${SGA_DB_PASSWORD:-1234}
+      MYSQL_DATABASE: SED_db
+    volumes:
+      - sed_volume:/var/lib/mysql
+    ports:
+      - "3308:3306"
+    networks:
+      - weather_network
+    restart: always
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${SGA_DB_PASSWORD:-1234}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+# Service SED (Sistema Eventi Distribuiti)
+  sed_service:
+    container_name: sed-service
+    build:
+      context: ../
+      dockerfile: SED/Dockerfile
+    image: sed_service_image:latest
+    depends_on:
+      sed_db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      sga_service:
+        condition: service_started
+    ports:
+      - "50055:50055"
+    environment:
+      HOSTNAME: "sed_db"
+      PORT: "3306"
+      USER: "root"
+      PASSWORD_DB: "${SED_DB_PASSWORD:-1234}"
+      DATABASE_SED: "SED_db"
+      SGA_HOST: "sga-service"
+      HOST: "0.0.0.0"
+      PORTA_SED: "50055"
+      PORTA_SGA: "50053"
+      KAFKA_BROKER: "kafka:29092"
+      KAFKA_TOPIC: "aggiornamento_eventi"
+      GROUP_ID: "group1"
+      APIKEY: "${OPENWEATHER_API_KEY}"
+      TIMER_POLLING: "5.0"
+      INTERVALLO_NOTIFICA: "30"
+      
+    networks:
+      - weather_network
+    restart: always
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus-service
+    restart: always
+    ports:
+      - "9090:9090"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --web.enable-lifecycle
+      - --storage.tsdb.retention.time=15d
+    volumes:
+      - prometheus_data:/prometheus
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus.rules:/etc/prometheus/prometheus.rules
+    networks:
+      - weather_network
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.46.0
+    container_name: weather-cadvisor
+    restart: always
+    networks:
+      - weather_network
+    ports:
+      - '8082:8080'
+    command:
+      - '--docker_only=true'
+      - '--housekeeping_interval=15s'
+    privileged: true
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+
+networks:
+  weather_network:
+    driver: bridge
+
+volumes:
+  zookeeper_data_volume:
+  zookeeper_log_volume:
+  zookeeper_secrets_volume:
+  kafka_secrets_volume:
+  kafka_data_volume:
+  sga_volume:
+  sgm_volume:
+  sed_volume:
+  prometheus_data:
+

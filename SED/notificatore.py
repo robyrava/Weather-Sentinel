@@ -2,7 +2,7 @@ import sys
 import os
 # percorso della directory contenente config.py e db.py al sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from config import*
+#from config import*
 from db import*
 from utility import*
 
@@ -12,6 +12,27 @@ import requests
 import json
 import logging
 from prometheus_client import Counter, Gauge, Histogram
+
+
+# CONFIGURAZIONE VARIABILI D'AMBIENTE
+
+DB_HOSTNAME = os.environ.get('HOSTNAME')
+DB_PORT = os.environ.get('PORT')
+DB_USER = os.environ.get('USER')
+DB_PASSWORD = os.environ.get('PASSWORD_DB')
+DATABASE_SED = os.environ.get('DATABASE_SED')
+SED_HOST = os.environ.get('SED_HOST')
+PORTA_SGA = os.environ.get('PORTA_SGA')
+SGA_HOST = os.environ.get('SGA_HOST')
+HOST = os.environ.get('HOST')
+
+PORTA_SED = os.environ.get('PORTA_SED')
+KAFKA_BROKER = os.environ.get('KAFKA_BROKER')
+KAFKA_TOPIC = os.environ.get('KAFKA_TOPIC')
+GROUP_ID = os.environ.get('GROUP_ID')
+TIMER_POLLING = 60
+
+INTERVALLO_NOTIFICA = 30 #Thread di notifica
 
 # Configurazione logger
 logging.basicConfig(level=logging.INFO)
@@ -135,10 +156,10 @@ class ThreadNotificatore(threading.Thread):
         try:
             tempo_inizio = time.time_ns()
             connessione = inizializza_connessione_db(
-                host=HOSTNAME, 
-                porta=PORT, 
-                utente=USER, 
-                password=PASSWORD_DB, 
+                host=DB_HOSTNAME, 
+                porta=DB_PORT, 
+                utente=DB_USER, 
+                password=DB_PASSWORD, 
                 database=DATABASE_SED
             )
             

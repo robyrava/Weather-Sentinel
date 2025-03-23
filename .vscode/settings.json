@@ -14,6 +14,36 @@
             "database": "SGA_db",
             "username": "root",
             "askForPassword": true
+        },
+        {
+            "mysqlOptions": {
+                "authProtocol": "default",
+                "enableSsl": "Disabled"
+            },
+            "previewLimit": 50,
+            "server": "localhost",
+            "port": 3307,
+            "driver": "MySQL",
+            "name": "SGM_DB",
+            "group": "progetto",
+            "database": "SGM_db",
+            "username": "root",
+            "askForPassword": true
+        },
+        {
+            "mysqlOptions": {
+                "authProtocol": "default",
+                "enableSsl": "Disabled"
+            },
+            "previewLimit": 50,
+            "server": "localhost",
+            "port": 3308,
+            "driver": "MySQL",
+            "name": "SED_DB",
+            "group": "progetto",
+            "database": "SED_db",
+            "username": "root",
+            "askForPassword": true
         }
     ]
 }

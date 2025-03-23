@@ -2,7 +2,6 @@ import sys
 import os
 # percorso della directory contenente config.py e db.py al sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from config import*
 from db import*
 from utility import*
 
@@ -15,6 +14,20 @@ from confluent_kafka.admin import AdminClient, NewTopic
 import json
 import requests
 
+# CONFIGURAZIONE VARIABILI D'AMBIENTE
+
+DB_HOSTNAME = os.environ.get('HOSTNAME')
+DB_PORT = os.environ.get('PORT')
+DB_USER = os.environ.get('USER')
+DB_PASSWORD = os.environ.get('PASSWORD_DB')
+DB_DATABASE = os.environ.get('DATABASE_SGM')
+SGA_HOST = os.environ.get('SGA_HOST')
+HOST = os.environ.get('HOST')
+PORTA_SGM = os.environ.get('PORTA_SGM')
+PORTA_SGA = os.environ.get('PORTA_SGA')
+KAFKA_BROKER = os.environ.get('KAFKA_BROKER')
+KAFKA_TOPIC = os.environ.get('KAFKA_TOPIC')
+INTERVALLO_PRODUZIONE_NOTIFICHE_KAFKA = 60
 
 
 # definizione delle metriche da esporre
@@ -167,11 +180,11 @@ def recupera_vincoli_pendenti():
     try:
         # CONNESSIONE AL DB
         connessione = inizializza_connessione_db(
-            host=HOSTNAME, 
-            porta=PORT, 
-            utente=USER, 
-            password=PASSWORD_DB, 
-            database=DATABASE_SGM
+            host=DB_HOSTNAME, 
+            porta=DB_PORT, 
+            utente=DB_USER, 
+            password=DB_PASSWORD, 
+            database=DB_DATABASE
         )
         
         if not connessione:
@@ -249,11 +262,11 @@ def callback_consegna(err, msg):
         try:
             # Inizializza la connessione al database
             connessione = inizializza_connessione_db(
-                host=HOSTNAME, 
-                porta=PORT, 
-                utente=USER, 
-                password=PASSWORD_DB, 
-                database=DATABASE_SGM
+                host=DB_HOSTNAME, 
+                porta=DB_PORT, 
+                utente=DB_USER, 
+                password=DB_PASSWORD, 
+                database=DB_DATABASE
             )
             
             if not connessione:
@@ -295,11 +308,11 @@ def callback_consegna(err, msg):
         try:
             # Inizializza la connessione al database
             connessione = inizializza_connessione_db(
-                host=HOSTNAME, 
-                porta=PORT, 
-                utente=USER, 
-                password=PASSWORD_DB, 
-                database=DATABASE_SGM
+                host=DB_HOSTNAME, 
+                porta=DB_PORT, 
+                utente=DB_USER, 
+                password=DB_PASSWORD, 
+                database=DB_DATABASE
             )
             
             if not connessione:
@@ -367,6 +380,10 @@ def timer(secondi, evento):
         secondi: Intervallo in secondi tra ogni evento
         evento: Oggetto threading.Event da impostare periodicamente
     """
+    # Assicurati che secondi sia un intero
+    if isinstance(secondi, str):
+        secondi = int(secondi)
+
     while True:
         logger.info(f"Timer: generazione evento dopo {secondi} secondi")
         time.sleep(secondi)
@@ -431,6 +448,9 @@ def ottieni_id_utente_da_email(email):
     try:
         # Incrementa il contatore di richieste al servizio SGA
         RICHIESTE_A_SGA.inc()
+        
+        # Debug info
+        #logger.info(f"Tentativo di contattare SGA all'indirizzo: http://{SGA_HOST}:{PORTA_SGA}/utente/email/{email}")
         
         # URL dell'endpoint del SGA per recuperare l'ID utente
         url = f"http://{SGA_HOST}:{PORTA_SGA}/utente/email/{email}"
@@ -532,11 +552,11 @@ def crea_server():
                     try:
                         # Inizializza la connessione al database
                         connessione_SGM = inizializza_connessione_db(
-                            host=HOSTNAME, 
-                            porta=PORT, 
-                            utente=USER, 
-                            password=PASSWORD_DB, 
-                            database=DATABASE_SGM
+                            host=DB_HOSTNAME, 
+                            porta=DB_PORT, 
+                            utente=DB_USER, 
+                            password=DB_PASSWORD, 
+                            database=DB_DATABASE
                         )
                         
                         try:
@@ -708,11 +728,11 @@ def crea_server():
                 try:
                     # Inizializza la connessione al database SGM
                     connessione_SGM = inizializza_connessione_db(
-                        host=HOSTNAME, 
-                        porta=PORT, 
-                        utente=USER, 
-                        password=PASSWORD_DB, 
-                        database=DATABASE_SGM
+                        host=DB_HOSTNAME, 
+                        porta=DB_PORT, 
+                        utente=DB_USER, 
+                        password=DB_PASSWORD, 
+                        database=DB_DATABASE
                     )
                     
                     if not connessione_SGM:
@@ -837,11 +857,11 @@ def crea_server():
                     try:
                         # Inizializza la connessione al database SGM per le regole
                         connessione_SGM = inizializza_connessione_db(
-                            host=HOSTNAME, 
-                            porta=PORT, 
-                            utente=USER, 
-                            password=PASSWORD_DB, 
-                            database=DATABASE_SGM
+                            host=DB_HOSTNAME, 
+                            porta=DB_PORT, 
+                            utente=DB_USER, 
+                            password=DB_PASSWORD, 
+                            database=DB_DATABASE
                         )
                         
                         if not connessione_SGM:
@@ -953,11 +973,11 @@ if __name__ == '__main__':
     try:
         # Inizializza la connessione al database
         connessione = inizializza_connessione_db(
-            host=HOSTNAME, 
-            porta=PORT, 
-            utente=USER, 
-            password=PASSWORD_DB, 
-            database=DATABASE_SGM
+            host=DB_HOSTNAME, 
+            porta=DB_PORT, 
+            utente=DB_USER, 
+            password=DB_PASSWORD, 
+            database=DB_DATABASE
         )
         
         if not connessione:
@@ -993,9 +1013,9 @@ if __name__ == '__main__':
             chiudi_connessione_db(connessione)
 
     # KAFKA
-    producer_conf = {'bootstrap.servers': KAFKA_BROKER_1, 'acks': 1}  # 1 ==> Conferma solo dal server leader
+    producer_conf = {'bootstrap.servers': KAFKA_BROKER, 'acks': 1}  # 1 ==> Conferma solo dal server leader
     producer_kafka = confluent_kafka.Producer(**producer_conf)
-    admin_conf = {'bootstrap.servers': KAFKA_BROKER_1} # Conf. dell'admin client
+    admin_conf = {'bootstrap.servers': KAFKA_BROKER} # Conf. dell'admin client
     kadmin = AdminClient(admin_conf) # Creazione client amministrativo
 
     # Creazione del topic aggiornamento_eventi se non esiste
@@ -1009,11 +1029,11 @@ if __name__ == '__main__':
 
     trovato = False
     for name in topic_names:
-        if name == KAFKA_TOPIC_1:
+        if name == KAFKA_TOPIC:
             trovato = True
     if trovato == False:
         # Topic non trovato, lo crea con 6 partizioni e fattore di replica 1
-        nuovo_topic = NewTopic(KAFKA_TOPIC_1, 6, 1)  
+        nuovo_topic = NewTopic(KAFKA_TOPIC, 6, 1)  
         kadmin.create_topics([nuovo_topic, ])
 
     
@@ -1021,7 +1041,7 @@ if __name__ == '__main__':
     Kafka_lista_messaggi = recupera_vincoli_pendenti()
     if Kafka_lista_messaggi != False:
         for message in Kafka_lista_messaggi:
-            while produci_messaggio_kafka(KAFKA_TOPIC_1, producer_kafka, message) == False:
+            while produci_messaggio_kafka(KAFKA_TOPIC, producer_kafka, message) == False:
                 pass  # Riprova finché non ha successo
     else:
         sys.exit("Errore nel trovare il lavoro in sospeso!")
@@ -1057,7 +1077,7 @@ if __name__ == '__main__':
             Kafka_lista_messaggi = recupera_vincoli_pendenti()
             if Kafka_lista_messaggi != False:
                 for messaggio in Kafka_lista_messaggi:
-                    while produci_messaggio_kafka(KAFKA_TOPIC_1, producer_kafka, messaggio) == False:
+                    while produci_messaggio_kafka(KAFKA_TOPIC, producer_kafka, messaggio) == False:
                         pass  # Riprova finché non ha successo
             else:
                 logger.error("Errore nel trovare il lavoro in sospeso!")

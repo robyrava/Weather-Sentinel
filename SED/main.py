@@ -2,7 +2,6 @@ import sys
 import os
 # percorso della directory contenente config.py e db.py al sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from config import*
 from db import*
 from utility import*
 
@@ -22,17 +21,36 @@ from flask import Response
 import logging
 from notificatore import ThreadNotificatore
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# CONFIGURAZIONE VARIABILI D'AMBIENTE
+
+DB_HOSTNAME = os.environ.get('HOSTNAME')
+DB_PORT = os.environ.get('PORT')
+DB_USER = os.environ.get('USER')
+DB_PASSWORD = os.environ.get('PASSWORD_DB')
+DATABASE_SED = os.environ.get('DATABASE_SED')
+SED_HOST = os.environ.get('SED_HOST')
+HOST = os.environ.get('HOST')
+
+PORTA_SED = os.environ.get('PORTA_SED')
+KAFKA_BROKER = os.environ.get('KAFKA_BROKER')
+KAFKA_TOPIC = os.environ.get('KAFKA_TOPIC')
+GROUP_ID = os.environ.get('GROUP_ID')
+TIMER_POLLING = 60
+
+INTERVALLO_NOTIFICA = 30 #Thread di notifica
+
+
+APIKEY = os.environ.get('APIKEY')
 
 # definizione delle metriche da esporre
 ERRORE_RICHIESTA_API = Counter('SED_errore_richiesta_OpenWeather', 'Numero totale di richieste inviate a OpenWeather che sono fallite')
 RICHIESTE_API = Counter('SED_richieste_a_OpenWeather', 'Numero totale di chiamate API a OpenWeather')
-TEMPO_DI_RISPOSTA = Gauge('SED_tempo_risposta_OpenWeather', 'Differenza tra l istante in cui il worker invia la richiesta a OpenWeather e l istante in cui riceve la risposta')
+TEMPO_DI_RISPOSTA = Gauge('SED_tempo_risposta_OpenWeather', 'Differenza tra l istante in cui il sed invia la richiesta a OpenWeather e l istante in cui riceve la risposta')
 ISTOGRAMMA_DURATA_QUERY = Histogram('SED_durata_query_nanosecondi_DB', 'Durata delle query al database in nanosecondi', buckets=[5000000, 10000000, 25000000, 50000000, 75000000, 100000000, 250000000, 500000000, 750000000, 1000000000, 2500000000,5000000000,7500000000,10000000000])
 # bucket indicati per misurare il tempo in nanosecondi
 
-
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Funzione per avviare il thread di notifica
 def avvia_thread_notificatore(intervallo=60):  # Default: controlla ogni minuto
@@ -95,10 +113,10 @@ def avvia_monitoraggio():
 
     try:
         connessione = inizializza_connessione_db(
-            host=HOSTNAME, 
-            porta=PORT, 
-            utente=USER, 
-            password=PASSWORD_DB, 
+            host=DB_HOSTNAME, 
+            porta=DB_PORT, 
+            utente=DB_USER, 
+            password=DB_PASSWORD, 
             database=DATABASE_SED
         )
         
@@ -445,10 +463,10 @@ def controlla_regole(vincoli_utente, dati_api):
             # Salva l'evento nel database
             try:
                 connessione = inizializza_connessione_db(
-                    host=HOSTNAME, 
-                    porta=PORT, 
-                    utente=USER, 
-                    password=PASSWORD_DB, 
+                    host=DB_HOSTNAME, 
+                    porta=DB_PORT, 
+                    utente=DB_USER, 
+                    password=DB_PASSWORD, 
                     database=DATABASE_SED
                 )
                 
@@ -494,10 +512,10 @@ if __name__ == "__main__":
     try:
         # Inizializza la connessione al database
         connessione = inizializza_connessione_db(
-            host=HOSTNAME, 
-            porta=PORT, 
-            utente=USER, 
-            password=PASSWORD_DB, 
+            host=DB_HOSTNAME, 
+            porta=DB_PORT, 
+            utente=DB_USER, 
+            password=DB_PASSWORD, 
             database=DATABASE_SED
         )
         
@@ -557,8 +575,8 @@ if __name__ == "__main__":
     
     # Avvio della sottoscrizione Kafka
     consumer_conf = {
-        'bootstrap.servers': KAFKA_BROKER_1,
-        'group.id': GROUP_ID_1,
+        'bootstrap.servers': KAFKA_BROKER,
+        'group.id': GROUP_ID,
         'enable.auto.commit': 'false',
         'auto.offset.reset': 'latest',
         'on_commit': commit_completed
@@ -566,8 +584,8 @@ if __name__ == "__main__":
     
     consumer_kafka = confluent_kafka.Consumer(consumer_conf)
     try:
-        consumer_kafka.subscribe([KAFKA_TOPIC_1])  # Sottoscrizione al topic di ingresso
-        logger.info(f"\nSottoscrizione al topic {KAFKA_TOPIC_1} effettuata con successo\n")
+        consumer_kafka.subscribe([KAFKA_TOPIC])  # Sottoscrizione al topic di ingresso
+        logger.info(f"\nSottoscrizione al topic {KAFKA_TOPIC} effettuata con successo\n")
     except confluent_kafka.KafkaException as ke:
         logger.error(f"\nErrore Kafka durante la sottoscrizione: {ke}\n")
         consumer_kafka.close()
@@ -601,10 +619,10 @@ if __name__ == "__main__":
         
                     # Connessione al database
                     connessione = inizializza_connessione_db(
-                        host=HOSTNAME, 
-                        porta=PORT, 
-                        utente=USER, 
-                        password=PASSWORD_DB, 
+                        host=DB_HOSTNAME, 
+                        porta=DB_PORT, 
+                        utente=DB_USER, 
+                        password=DB_PASSWORD, 
                         database=DATABASE_SED
                     )
                     
@@ -625,7 +643,7 @@ if __name__ == "__main__":
                         if not risultato:
                             logger.error(f"\nErrore nella memorizzazione del msg kafka ricevuto\n")
                         else:
-                            logger.info(f"\Msg Kafka memorizzato correttamente nel DB!\n")
+                            logger.info(f"\nMsg Kafka memorizzato correttamente nel DB!\n")
 
 
                     finally:

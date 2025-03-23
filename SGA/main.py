@@ -2,7 +2,6 @@ import sys
 import os
 # percorso della directory contenente config.py e db.py al sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from config import*
 from db import*
 from utility import*
 
@@ -13,6 +12,17 @@ import time
 import datetime
 from flask import Flask, Response, request
 from prometheus_client import Counter, generate_latest, REGISTRY, Gauge, Histogram
+
+#CONFIGURAZIONE VARIABILI D'AMBIENTE
+
+# Recupero delle variabili d'ambiente con fallback sui valori predefiniti
+DB_HOSTNAME = os.environ.get('HOSTNAME')
+DB_PORT = os.environ.get('PORT')
+DB_USER = os.environ.get('USER')
+DB_PASSWORD = os.environ.get('PASSWORD_DB')
+DB_DATABASE = os.environ.get('DATABASE_SGA')
+HOST = os.environ.get('HOST')
+PORTA_SGA = os.environ.get('PORTA_SGA')
 
 # Configurazione logger
 logging.basicConfig(level=logging.INFO)
@@ -69,7 +79,7 @@ def verifica_token(token, password_hash=None):
         if not password_hash:
             try:
                 # Inizializza la connessione al database
-                with inizializza_connessione_db(HOSTNAME, PORT, USER, PASSWORD_DB, DATABASE_SGA) as connessione:
+                with inizializza_connessione_db(DB_HOSTNAME, DB_PORT, DB_USER, DB_PASSWORD, DB_DATABASE) as connessione:
                     if not connessione:
                         logger.error("Errore nella connessione al database")
                         return None
@@ -126,11 +136,11 @@ def crea_server():
                     try:
                         # Inizializza la connessione al database
                         connessione = inizializza_connessione_db(
-                            host=HOSTNAME, 
-                            porta=PORT, 
-                            utente=USER, 
-                            password=PASSWORD_DB, 
-                            database=DATABASE_SGA
+                            host=DB_HOSTNAME, 
+                            porta=DB_PORT, 
+                            utente=DB_USER, 
+                            password=DB_PASSWORD, 
+                            database=DB_DATABASE
                         )
                         
                         if not connessione:
@@ -204,11 +214,11 @@ def crea_server():
                     try:
                         # Inizializza la connessione al database
                         connessione = inizializza_connessione_db(
-                            host=HOSTNAME, 
-                            porta=PORT, 
-                            utente=USER, 
-                            password=PASSWORD_DB, 
-                            database=DATABASE_SGA
+                            host=DB_HOSTNAME, 
+                            porta=DB_PORT, 
+                            utente=DB_USER, 
+                            password=DB_PASSWORD, 
+                            database=DB_DATABASE
                         )
                         
                         if not connessione:
@@ -282,11 +292,11 @@ def crea_server():
                     try:
                         # Inizializza la connessione al database
                         connessione = inizializza_connessione_db(
-                            host=HOSTNAME, 
-                            porta=PORT, 
-                            utente=USER, 
-                            password=PASSWORD_DB, 
-                            database=DATABASE_SGA
+                            host=DB_HOSTNAME, 
+                            porta=DB_PORT, 
+                            utente=DB_USER, 
+                            password=DB_PASSWORD, 
+                            database=DB_DATABASE
                         )
                         
                         if not connessione:
@@ -345,11 +355,11 @@ def crea_server():
         try:
             # Inizializza la connessione al database
             connessione = inizializza_connessione_db(
-                host=HOSTNAME, 
-                porta=PORT, 
-                utente=USER, 
-                password=PASSWORD_DB, 
-                database=DATABASE_SGA
+                host=DB_HOSTNAME, 
+                porta=DB_PORT, 
+                utente=DB_USER, 
+                password=DB_PASSWORD, 
+                database=DB_DATABASE
             )
             
             if not connessione:
@@ -402,11 +412,11 @@ def crea_server():
         try:
             # Inizializza la connessione al database
             connessione = inizializza_connessione_db(
-                host=HOSTNAME, 
-                porta=PORT, 
-                utente=USER, 
-                password=PASSWORD_DB, 
-                database=DATABASE_SGA
+                host=DB_HOSTNAME, 
+                porta=DB_PORT, 
+                utente=DB_USER, 
+                password=DB_PASSWORD, 
+                database=DB_DATABASE
             )
 
             if not connessione:
@@ -461,7 +471,7 @@ def crea_server():
 
 def avvia_server():
     hostname = socket.gethostname()
-    logger.info(f'Hostname: {hostname} -> server starting on port {str(PORTA_SGA)}')
+    logger.info(f'Hostname: {hostname} -> server starting on DB_PORT {str(PORTA_SGA)}')
     app.run(HOST, port=PORTA_SGA, threaded=True)
 
 # create Flask application
@@ -472,15 +482,15 @@ if __name__ == '__main__':
     try:
         # Inizializza la connessione al database
         connessione = inizializza_connessione_db(
-            host=HOSTNAME, 
-            porta=PORT, 
-            utente=USER, 
-            password=PASSWORD_DB, 
-            database=DATABASE_SGA
+            host=DB_HOSTNAME, 
+            porta=DB_PORT, 
+            utente=DB_USER, 
+            password=DB_PASSWORD, 
+            database=DB_DATABASE
         )
         
         if not connessione:
-            sys.exit("User Manager terminating: impossibile connettersi al database\n")
+            sys.exit("DB_USER Manager terminating: impossibile connettersi al database\n")
         
         # Crea la tabella utenti se non esiste
         utenti_cursor = esegui_query(
@@ -492,7 +502,7 @@ if __name__ == '__main__':
         )
         
         if not utenti_cursor:
-            sys.exit("User Manager terminating: impossibile creare la tabella utenti\n")
+            sys.exit("DB_USER Manager terminating: impossibile creare la tabella utenti\n")
         
         # Crea la tabella metriche_to_restore se non esiste
         metriche_cursor = esegui_query(
@@ -504,11 +514,11 @@ if __name__ == '__main__':
         )
         
         if not metriche_cursor:
-            sys.exit("User Manager terminating: impossibile creare la tabella metriche_to_restore\n")
+            sys.exit("DB_USER Manager terminating: impossibile creare la tabella metriche_to_restore\n")
     
     except Exception as err:
         sys.stderr.write("Exception raised! -> " + str(err) + "\n")
-        sys.exit("User Manager terminating after an error...\n")
+        sys.exit("DB_USER Manager terminating after an error...\n")
     finally:
         if 'connessione' in locals() and connessione:
             chiudi_connessione_db(connessione)
