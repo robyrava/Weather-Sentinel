@@ -232,6 +232,20 @@ services:
       - /sys:/sys:ro
       - /var/lib/docker:/var/lib/docker:ro
 
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    depends_on:
+      - prometheus
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - weather_network
+    restart: always
+
 networks:
   weather_network:
     driver: bridge
@@ -246,4 +260,5 @@ volumes:
   sgm_volume:
   sed_volume:
   prometheus_data:
+  grafana_data:
 

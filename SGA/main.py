@@ -30,12 +30,12 @@ logger = logging.getLogger(__name__)
 
 # METRICHE SGA
 # Definizione delle metriche da esporre
-RICHIESTE = Counter('SGA_richieste', 'Numero totale di richieste ricevute dal servizio SGA')
-FALLIMENTI = Counter('SGA_richieste_fallite', 'Numero totale di richieste al servizio SGA che sono fallite')
-ERRORI_INTERNI = Counter('SGA_errori_http_interni', 'Numero totale di errori HTTP interni nel servizio SGA')
+RICHIESTE_SGA = Counter('SGA_richieste', 'Numero totale di richieste ricevute dal servizio SGA')
+FALLIMENTI_SGA = Counter('SGA_richieste_fallite', 'Numero totale di richieste al servizio SGA che sono fallite')
+ERRORI_INTERNI_SGA = Counter('SGA_errori_http_interni', 'Numero totale di errori HTTP interni nel servizio SGA')
 RISPOSTE_A_SGM = Counter('SGA_risposte_a_SGM', 'Numero totale di risposte inviate al servizio SGM')
-CONTEGGIO_UTENTI_REGISTRATI = Gauge('SGA_conteggio_utenti_registrati', 'Numero totale di utenti registrati')
-TEMPO_DI_RISPOSTA = Gauge('SGA_tempo_di_risposta_client', 'Latenza tra l istante in cui il client invia la chiamata API e l istante in cui il gestore utenti risponde')
+CONTEGGIO_UTENTI_REGISTRATI_SGA = Gauge('SGA_conteggio_utenti_registrati', 'Numero totale di utenti registrati')
+TEMPO_DI_RISPOSTA_SGA = Gauge('SGA_tempo_di_risposta_client', 'Latenza tra l istante in cui il client invia la chiamata API e l istante in cui il gestore utenti risponde')
 ISTOGRAMMA_DURATA_QUERY = Histogram(
     'SGA_durate_query_nanosecondi_DB', 
     'Durata delle query al database in nanosecondi', 
@@ -122,7 +122,7 @@ def crea_server():
     @app.route('/registrazione', methods=['POST'])
     def registrazione_utente():
         # Incrementa la metrica delle richieste
-        RICHIESTE.inc()
+        RICHIESTE_SGA.inc()
         # Verifica se i dati ricevuti sono in formato JSON
         if request.is_json:
             try:
@@ -144,18 +144,18 @@ def crea_server():
                         )
                         
                         if not connessione:
-                            FALLIMENTI.inc()
-                            ERRORI_INTERNI.inc()
-                            TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
+                            FALLIMENTI_SGA.inc()
+                            ERRORI_INTERNI_SGA.inc()
+                            TEMPO_DI_RISPOSTA_SGA.set(time.time_ns() - timestamp_client)
                             return "Errore nella connessione al database", 500
                         
                         try:
                             utente_esiste = verifica_utente(connessione, email, ISTOGRAMMA_DURATA_QUERY)
                             
                             if utente_esiste is None:
-                                FALLIMENTI.inc()
-                                ERRORI_INTERNI.inc()
-                                TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
+                                FALLIMENTI_SGA.inc()
+                                ERRORI_INTERNI_SGA.inc()
+                                TEMPO_DI_RISPOSTA_SGA.set(time.time_ns() - timestamp_client)
                                 return "Errore nella verifica dell'email", 500
                             
                             if not utente_esiste:
@@ -164,18 +164,18 @@ def crea_server():
                                 
                                 # OTTIMIZZATO: Usa la nuova funzione inserisci_utente
                                 if not inserisci_utente(connessione, email, hash_psw, ISTOGRAMMA_DURATA_QUERY):
-                                    FALLIMENTI.inc()
-                                    ERRORI_INTERNI.inc()
-                                    TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
+                                    FALLIMENTI_SGA.inc()
+                                    ERRORI_INTERNI_SGA.inc()
+                                    TEMPO_DI_RISPOSTA_SGA.set(time.time_ns() - timestamp_client)
                                     return "Errore nell'inserimento del nuovo utente", 500
                                 
-                                CONTEGGIO_UTENTI_REGISTRATI.inc()
-                                TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
+                                CONTEGGIO_UTENTI_REGISTRATI_SGA.inc()
+                                TEMPO_DI_RISPOSTA_SGA.set(time.time_ns() - timestamp_client)
                                 return "Registrazione avvenuta con successo! Ora prova ad accedere!", 200
                             else:
                                 # L'email esiste già
-                                TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
-                                FALLIMENTI.inc()
+                                TEMPO_DI_RISPOSTA_SGA.set(time.time_ns() - timestamp_client)
+                                FALLIMENTI_SGA.inc()
                                 return "Email già in uso! Prova ad accedere!", 401
                         
                         finally:
@@ -184,22 +184,22 @@ def crea_server():
                             
                     except Exception as err:
                         logger.error(f"Eccezione sollevata! -> {err}")
-                        FALLIMENTI.inc()
-                        ERRORI_INTERNI.inc()
-                        TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
+                        FALLIMENTI_SGA.inc()
+                        ERRORI_INTERNI_SGA.inc()
+                        TEMPO_DI_RISPOSTA_SGA.set(time.time_ns() - timestamp_client)
                         return f"Errore durante la registrazione: {str(err)}", 500
 
             except Exception as e:
-                FALLIMENTI.inc()
+                FALLIMENTI_SGA.inc()
                 return f"Errore nella lettura dei dati: {str(e)}", 400
         else:
-            FALLIMENTI.inc()
+            FALLIMENTI_SGA.inc()
             return "Errore: la richiesta deve essere in formato JSON", 400
     
     @app.route('/login', methods=['POST'])
     def accesso_utente():
         # Incrementa la metrica delle richieste
-        RICHIESTE.inc()
+        RICHIESTE_SGA.inc()
         # Verifica se i dati ricevuti sono in formato JSON
         if request.is_json:
             try:
@@ -222,9 +222,9 @@ def crea_server():
                         )
                         
                         if not connessione:
-                            FALLIMENTI.inc()
-                            ERRORI_INTERNI.inc()
-                            TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
+                            FALLIMENTI_SGA.inc()
+                            ERRORI_INTERNI_SGA.inc()
+                            TEMPO_DI_RISPOSTA_SGA.set(time.time_ns() - timestamp_client)
                             return "Errore nella connessione al database", 500
                         
                         try:
@@ -233,11 +233,11 @@ def crea_server():
                             
                             if utente is None:
                                 # Credenziali non valide
-                                FALLIMENTI.inc()
-                                TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
+                                FALLIMENTI_SGA.inc()
+                                TEMPO_DI_RISPOSTA_SGA.set(time.time_ns() - timestamp_client)
                                 return "Email o password errata! Riprova!", 401
                             else:
-                                TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
+                                TEMPO_DI_RISPOSTA_SGA.set(time.time_ns() - timestamp_client)
                                 
                                 # Crea un token JWT invece di usare la sessione
                                 payload = {
@@ -253,22 +253,22 @@ def crea_server():
                     
                     except Exception as err:
                         logger.error(f"Eccezione sollevata! -> {err}")
-                        FALLIMENTI.inc()
-                        ERRORI_INTERNI.inc()
-                        TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
+                        FALLIMENTI_SGA.inc()
+                        ERRORI_INTERNI_SGA.inc()
+                        TEMPO_DI_RISPOSTA_SGA.set(time.time_ns() - timestamp_client)
                         return f"Errore durante l'accesso: {str(err)}", 500
             
             except Exception as e:
-                FALLIMENTI.inc()
+                FALLIMENTI_SGA.inc()
                 return f"Errore nella lettura dei dati: {str(e)}", 400
         else:
-            FALLIMENTI.inc()
+            FALLIMENTI_SGA.inc()
             return "Errore: la richiesta deve essere in formato JSON", 400
     
     @app.route('/elimina_account', methods=['POST'])
     def elimina_account():
         # Incrementa la metrica delle richieste
-        RICHIESTE.inc()
+        RICHIESTE_SGA.inc()
         # Verifica se i dati ricevuti sono in formato JSON
         if request.is_json:
             try:
@@ -282,8 +282,8 @@ def crea_server():
                     payload, errore = verifica_token_jwt(intestazione_autorizzazione)
 
                     if errore:
-                        FALLIMENTI.inc()
-                        TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
+                        FALLIMENTI_SGA.inc()
+                        TEMPO_DI_RISPOSTA_SGA.set(time.time_ns() - timestamp_client)
                         return errore
                     
                     # Token valido, estrai email e procedi
@@ -300,9 +300,9 @@ def crea_server():
                         )
                         
                         if not connessione:
-                            FALLIMENTI.inc()
-                            ERRORI_INTERNI.inc()
-                            TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
+                            FALLIMENTI_SGA.inc()
+                            ERRORI_INTERNI_SGA.inc()
+                            TEMPO_DI_RISPOSTA_SGA.set(time.time_ns() - timestamp_client)
                             return "Errore nella connessione al database", 500
                         
                         try:
@@ -310,20 +310,20 @@ def crea_server():
                             utente_info = verifica_utente(connessione, email, ISTOGRAMMA_DURATA_QUERY, restituisci_dettagli=True)
                             
                             if not utente_info or 'password' not in utente_info:
-                                FALLIMENTI.inc()
-                                TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
+                                FALLIMENTI_SGA.inc()
+                                TEMPO_DI_RISPOSTA_SGA.set(time.time_ns() - timestamp_client)
                                 return "Utente non trovato!", 401
                             
                             # Elimina l'utente
                             if not elimina_utente(connessione, email, ISTOGRAMMA_DURATA_QUERY):
-                                FALLIMENTI.inc()
-                                ERRORI_INTERNI.inc()
-                                TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
+                                FALLIMENTI_SGA.inc()
+                                ERRORI_INTERNI_SGA.inc()
+                                TEMPO_DI_RISPOSTA_SGA.set(time.time_ns() - timestamp_client)
                                 return "Errore nell'eliminazione dell'account", 500
                             
                             # Decrementa il contatore degli utenti registrati
-                            CONTEGGIO_UTENTI_REGISTRATI.dec()
-                            TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
+                            CONTEGGIO_UTENTI_REGISTRATI_SGA.dec()
+                            TEMPO_DI_RISPOSTA_SGA.set(time.time_ns() - timestamp_client)
                             return "ACCOUNT ELIMINATO CON SUCCESSO!", 200
                         
                         finally:
@@ -332,16 +332,16 @@ def crea_server():
                     
                     except Exception as err:
                         logger.error(f"Eccezione sollevata! -> {err}")
-                        FALLIMENTI.inc()
-                        ERRORI_INTERNI.inc()
-                        TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
+                        FALLIMENTI_SGA.inc()
+                        ERRORI_INTERNI_SGA.inc()
+                        TEMPO_DI_RISPOSTA_SGA.set(time.time_ns() - timestamp_client)
                         return f"Errore nella connessione al database: {str(err)}", 500
 
             except Exception as e:
-                FALLIMENTI.inc()
+                FALLIMENTI_SGA.inc()
                 return f"Errore nella lettura dei dati: {str(e)}", 400
         else:
-            FALLIMENTI.inc()
+            FALLIMENTI_SGA.inc()
             return "Errore: la richiesta deve essere in formato JSON", 400
 
     @app.route('/utente/<int:id_utente>/email', methods=['GET'])
@@ -350,7 +350,7 @@ def crea_server():
         Endpoint per recuperare l'email di un utente dato il suo ID.
         """
         # Incrementa la metrica delle richieste
-        RICHIESTE.inc()
+        RICHIESTE_SGA.inc()
         
         try:
             # Inizializza la connessione al database
@@ -363,8 +363,8 @@ def crea_server():
             )
             
             if not connessione:
-                FALLIMENTI.inc()
-                ERRORI_INTERNI.inc()
+                FALLIMENTI_SGA.inc()
+                ERRORI_INTERNI_SGA.inc()
                 return "Errore nella connessione al database", 500
             
             try:
@@ -377,14 +377,14 @@ def crea_server():
                 )
                 
                 if not cursore:
-                    FALLIMENTI.inc()
-                    ERRORI_INTERNI.inc()
+                    FALLIMENTI_SGA.inc()
+                    ERRORI_INTERNI_SGA.inc()
                     return "Errore nel recupero dell'email", 500
                 
                 risultato = cursore.fetchone()
                 
                 if not risultato:
-                    FALLIMENTI.inc()
+                    FALLIMENTI_SGA.inc()
                     return f"Utente con ID {id_utente} non trovato", 404
                 
                 # Restituisci l'email come JSON
@@ -397,8 +397,8 @@ def crea_server():
                 
         except Exception as err:
             logger.error(f"Eccezione sollevata! -> {err}")
-            FALLIMENTI.inc()
-            ERRORI_INTERNI.inc()
+            FALLIMENTI_SGA.inc()
+            ERRORI_INTERNI_SGA.inc()
             return f"Errore nel recupero dell'email: {str(err)}", 500
 
     @app.route('/utente/email/<email>', methods=['GET'])
@@ -407,7 +407,7 @@ def crea_server():
         Endpoint per recuperare l'ID di un utente data la sua email.
         """
         # Incrementa la metrica delle richieste
-        RICHIESTE.inc()
+        RICHIESTE_SGA.inc()
 
         try:
             # Inizializza la connessione al database
@@ -420,8 +420,8 @@ def crea_server():
             )
 
             if not connessione:
-                FALLIMENTI.inc()
-                ERRORI_INTERNI.inc()
+                FALLIMENTI_SGA.inc()
+                ERRORI_INTERNI_SGA.inc()
                 return "Errore nella connessione al database", 500
 
             try:
@@ -434,14 +434,14 @@ def crea_server():
                 )
 
                 if not cursore:
-                    FALLIMENTI.inc()
-                    ERRORI_INTERNI.inc()
+                    FALLIMENTI_SGA.inc()
+                    ERRORI_INTERNI_SGA.inc()
                     return "Errore nel recupero dell'ID utente", 500
 
                 risultato = cursore.fetchone()
 
                 if not risultato:
-                    FALLIMENTI.inc()
+                    FALLIMENTI_SGA.inc()
                     return f"Utente con email {email} non trovato", 404
 
                 # Restituisci l'ID come JSON
@@ -454,8 +454,8 @@ def crea_server():
 
         except Exception as err:
             logger.error(f"Eccezione sollevata! -> {err}")
-            FALLIMENTI.inc()
-            ERRORI_INTERNI.inc()
+            FALLIMENTI_SGA.inc()
+            ERRORI_INTERNI_SGA.inc()
             return f"Errore nel recupero dell'ID: {str(err)}", 500    
     
     #@app.route('/logout', methods=['POST'])

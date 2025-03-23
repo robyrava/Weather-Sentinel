@@ -1,0 +1,121 @@
+groups:
+  - name: weather_sentinel
+    rules:
+    # Richieste di successo calcolate
+    - record: SGA_richieste_successo_totali
+      expr: SGA_richieste - SGA_richieste_fallite
+
+    - record: SGM_richieste_successo_totali
+      expr: richieste_SGM - richieste_fallite_SGM
+
+    - record: SED_richieste_OpenWeather_successo_totali
+      expr: SED_richieste_a_OpenWeather - SED_errore_richiesta_OpenWeather
+
+    # Percentuali di successo
+    - record: SGA_percentuale_richieste_successo
+      expr: SGA_richieste_successo_totali / clamp_min(SGA_richieste, 1) * 100
+
+    - record: SGM_percentuale_richieste_successo
+      expr: SGM_richieste_successo_totali / clamp_min(richieste_SGM, 1) * 100
+
+    - record: SED_percentuale_richieste_OpenWeather_successo
+      expr: SED_richieste_OpenWeather_successo_totali / clamp_min(SED_richieste_a_OpenWeather, 1) * 100
+
+    - record: SED_percentuale_notifiche_successo
+      expr: (SED_notifiche_inviate - SED_notifiche_fallite) / clamp_min(SED_notifiche_inviate, 1) * 100
+
+    # Rate per secondo nell'ultima ora
+    - record: SGA_richieste_al_secondo_ultima_ora
+      expr: rate(SGA_richieste[1h])
+
+    - record: SGM_richieste_al_secondo_ultima_ora
+      expr: rate(richieste_SGM[1h])
+
+    - record: SED_richieste_OpenWeather_al_secondo_ultima_ora
+      expr: rate(SED_richieste_a_OpenWeather[1h])
+
+    # Durate medie delle query
+    - record: SGA_DB_durata_media_query_nanosecondi
+      expr: sum(rate(SGA_durate_query_nanosecondi_DB_sum[5m])) / sum(rate(SGA_durate_query_nanosecondi_DB_count[5m]))
+
+    - record: SGM_DB_durata_media_query_nanosecondi
+      expr: sum(rate(durata_query_nanosecondi_DB_SGM_sum[5m])) / sum(rate(durata_query_nanosecondi_DB_SGM_count[5m]))
+
+    - record: SED_DB_durata_media_query_nanosecondi
+      expr: sum(rate(SED_durata_query_nanosecondi_DB_sum[5m])) / sum(rate(SED_durata_query_nanosecondi_DB_count[5m]))
+
+    # Mediana e percentili per le durate delle query
+    - record: SGA_DB_durata_mediana_query_nanosecondi
+      expr: histogram_quantile(0.5, sum(rate(SGA_durate_query_nanosecondi_DB_bucket[5m])) by (le))
+
+    - record: SGA_DB_durata_90p_query_nanosecondi
+      expr: histogram_quantile(0.9, sum(rate(SGA_durate_query_nanosecondi_DB_bucket[5m])) by (le))
+
+    - record: SGM_DB_durata_mediana_query_nanosecondi
+      expr: histogram_quantile(0.5, sum(rate(durata_query_nanosecondi_DB_SGM_bucket[5m])) by (le))
+
+    - record: SGM_DB_durata_90p_query_nanosecondi
+      expr: histogram_quantile(0.9, sum(rate(durata_query_nanosecondi_DB_SGM_bucket[5m])) by (le))
+
+    - record: SED_DB_durata_mediana_query_nanosecondi
+      expr: histogram_quantile(0.5, sum(rate(SED_durata_query_nanosecondi_DB_bucket[5m])) by (le))
+
+    - record: SED_DB_durata_90p_query_nanosecondi
+      expr: histogram_quantile(0.9, sum(rate(SED_durata_query_nanosecondi_DB_bucket[5m])) by (le))
+
+  - name: weather_sentinel_alerts
+    rules:
+    # Regole di alerting
+    - alert: AltoTassoErroriSGA
+      expr: SGA_percentuale_richieste_successo < 95
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Alto tasso di errori nel servizio SGA"
+        description: "Il servizio SGA ha una percentuale di successo inferiore al 95% negli ultimi 5 minuti"
+
+    - alert: AltoTassoErroriSGM
+      expr: SGM_percentuale_richieste_successo < 95
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Alto tasso di errori nel servizio SGM"
+        description: "Il servizio SGM ha una percentuale di successo inferiore al 95% negli ultimi 5 minuti"
+
+    - alert: ProblemiOpenWeatherAPI
+      expr: SED_percentuale_richieste_OpenWeather_successo < 90
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Problemi con l'API OpenWeather"
+        description: "Le richieste all'API OpenWeather stanno fallendo con un tasso superiore al 10%"
+
+    - alert: LatenzaElevataDB
+      expr: SGM_DB_durata_media_query_nanosecondi > 500000000
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Latenza elevata del database SGM"
+        description: "La durata media delle query al database SGM supera i 500ms"
+
+    - alert: NotificheFallite
+      expr: SED_percentuale_notifiche_successo < 90
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Alto tasso di notifiche fallite"
+        description: "Il servizio SED ha un tasso di fallimento delle notifiche superiore al 10%"
+
+    - alert: EventiInAttesaElevati
+      expr: SED_eventi_in_attesa_di_notifica > 50
+      for: 15m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Accumulo di eventi da notificare"
+        description: "Ci sono più di 50 eventi in attesa di notifica da più di 15 minuti"
