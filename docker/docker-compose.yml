@@ -195,6 +195,55 @@ services:
       - weather_network
     restart: always
 
+  gls_db:
+    image: mysql:latest
+    container_name: gls_db
+    environment:
+      MYSQL_ROOT_PASSWORD: ${GLS_DB_PASSWORD:-1234}
+      MYSQL_DATABASE: GLS_db
+    volumes:
+      - gls_volume:/var/lib/mysql
+    ports:
+      - "3309:3306"
+    networks:
+      - weather_network
+    restart: always
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${SGA_DB_PASSWORD:-1234}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  gls_service:
+    container_name: gls-service
+    build:
+      context: ../
+      dockerfile: GLS/Dockerfile
+    image: gls_service_image:latest
+    depends_on:
+      gls_db:
+        condition: service_healthy
+      prometheus:
+        condition: service_started
+    ports:
+      - "50056:50056"
+    environment:
+      HOSTNAME: "gls_db"
+      PORT: "3306"
+      USER: "root"
+      PASSWORD_DB: "${GLS_DB_PASSWORD:-1234}"
+      DATABASE_GLS: "GLS_db"
+      HOST: "0.0.0.0"
+      PORTA_GLS: "50056"
+      PORTA_SGA: "50053"
+      ADMIN_EMAIL: "${ADMIN_EMAIL}"
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD}"
+      PROMETHEUS_URL: "http://prometheus:9090"
+      
+    networks:
+      - weather_network
+    restart: always
+
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus-service
@@ -232,19 +281,19 @@ services:
       - /sys:/sys:ro
       - /var/lib/docker:/var/lib/docker:ro
 
-  grafana:
-    image: grafana/grafana:latest
-    container_name: grafana
-    depends_on:
-      - prometheus
-    ports:
-      - "3000:3000"
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./grafana/provisioning:/etc/grafana/provisioning
-    networks:
-      - weather_network
-    restart: always
+#  grafana:
+#    image: grafana/grafana:latest
+#    container_name: grafana
+#    depends_on:
+#      - prometheus
+#    ports:
+#      - "3000:3000"
+#    volumes:
+#      - grafana_data:/var/lib/grafana
+#      - ./grafana/provisioning:/etc/grafana/provisioning
+#    networks:
+#      - weather_network
+#    restart: always
 
 networks:
   weather_network:
@@ -259,6 +308,7 @@ volumes:
   sga_volume:
   sgm_volume:
   sed_volume:
+  gls_volume:
   prometheus_data:
-  grafana_data:
+  #grafana_data:
 

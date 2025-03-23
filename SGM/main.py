@@ -32,7 +32,7 @@ INTERVALLO_PRODUZIONE_NOTIFICHE_KAFKA = 60
 
 # definizione delle metriche da esporre
 RICHIESTE_SGM = Counter('richieste_SGM', 'Numero totale di richieste ricevute dal servizio SGM')
-RICHIESTE_FALLITE = Counter('richieste_fallite_SGM', 'Numero totale di richieste ricevute dal servizio SGM che sono fallite')
+RICHIESTE_FALLITE = Counter('richieste_SGM', 'Numero totale di richieste ricevute dal servizio SGM che sono fallite')
 ERRORE_INTERNO = Counter('errore_http_interno_SGM', 'Numero totale di errori HTTP interni nel servizio SGM')
 REGOLE_ATTIVE = Gauge('regole_attive_SGM', 'Numero totale di regole fornite al sistema')
 MESSAGGI_KAFKA = Counter('messaggi_kafka_SGM', 'Numero totale di messaggi Kafka prodotti dal servizio SGM')
