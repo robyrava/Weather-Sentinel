@@ -8,21 +8,27 @@ rule_files:
 scrape_configs:
   - job_name: 'sga'
     scrape_interval: 15s
-    metrics_path: /metriche
+    metrics_path: /prometheus/metrics
     static_configs:
-      - targets: ['sga-service:50053']
+      - targets: ['api-gateway:80']
     
   - job_name: 'sgm'
     scrape_interval: 15s
-    metrics_path: /metriche
+    metrics_path: /prometheus/metrics/sgm
     static_configs:
-      - targets: ['sgm-service:50054']
+      - targets: ['api-gateway:80']
   
   - job_name: 'sed'
     scrape_interval: 15s
-    metrics_path: /metriche
+    metrics_path: /prometheus/metrics/sed
     static_configs:
-      - targets: ['sed-service:50055']
+      - targets: ['api-gateway:80']
+      
+  - job_name: 'gls'
+    scrape_interval: 15s
+    metrics_path: /prometheus/metrics/gls
+    static_configs:
+      - targets: ['api-gateway:80']
   
   - job_name: cadvisor
     scrape_interval: 15s

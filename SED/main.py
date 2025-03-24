@@ -76,7 +76,6 @@ def ferma_thread_notificatore():
     thread_notificatore_attivo = False
     logger.info("\nRichiesta di terminazione del thread di notifica\n")
 
-
 def crea_server():
     app = Flask(__name__)
     

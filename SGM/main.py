@@ -8,6 +8,7 @@ from utility import*
 import threading
 import socket
 from flask import Flask,Response, request
+from prometheus_client import Counter, REGISTRY
 import logging
 import confluent_kafka
 from confluent_kafka.admin import AdminClient, NewTopic
@@ -32,7 +33,7 @@ INTERVALLO_PRODUZIONE_NOTIFICHE_KAFKA = 60
 
 # definizione delle metriche da esporre
 RICHIESTE_SGM = Counter('richieste_SGM', 'Numero totale di richieste ricevute dal servizio SGM')
-RICHIESTE_FALLITE = Counter('richieste_SGM', 'Numero totale di richieste ricevute dal servizio SGM che sono fallite')
+RICHIESTE_FALLITE = Counter('richieste_SGM_Fallite', 'Numero totale di richieste ricevute dal servizio SGM che sono fallite')
 ERRORE_INTERNO = Counter('errore_http_interno_SGM', 'Numero totale di errori HTTP interni nel servizio SGM')
 REGOLE_ATTIVE = Gauge('regole_attive_SGM', 'Numero totale di regole fornite al sistema')
 MESSAGGI_KAFKA = Counter('messaggi_kafka_SGM', 'Numero totale di messaggi Kafka prodotti dal servizio SGM')
@@ -164,8 +165,6 @@ def crea_messaggio_kafka(dizionario_json_finale, id_città, connessione, istogra
     
     logger.info(f"\nDIZIONARIO JSON FINALE: {str(dizionario_json_finale)}\n")
     return json.dumps(dizionario_json_finale)   
-
-    
 
 def recupera_vincoli_pendenti():
     """
