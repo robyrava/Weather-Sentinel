@@ -1,0 +1,292 @@
+# SGA (Sistema Gestione Account)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sga-service
+  namespace: weather-sentinel
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sga-service
+  template:
+    metadata:
+      labels:
+        app: sga-service
+    spec:
+      containers:
+      - name: sga-service
+        image: sga_service_image:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 50053
+        env:
+        - name: MYSQL_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: weather-sentinel-config
+              key: MYSQL_HOST_SGA
+        - name: MYSQL_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: weather-sentinel-config
+              key: MYSQL_PORT
+        - name: MYSQL_USER
+          valueFrom:
+            configMapKeyRef:
+              name: weather-sentinel-config
+              key: MYSQL_USER
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: weather-sentinel-secrets
+              key: SGA_DB_PASSWORD
+        - name: MYSQL_DATABASE
+          valueFrom:
+            configMapKeyRef:
+              name: weather-sentinel-config
+              key: MYSQL_DATABASE_SGA
+        - name: PORTA_SGA
+          valueFrom:
+            configMapKeyRef:
+              name: weather-sentinel-config
+              key: PORTA_SGA
+        - name: ADMIN_EMAIL
+          valueFrom:
+            secretKeyRef:
+              name: weather-sentinel-secrets
+              key: ADMIN_EMAIL
+        - name: ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: weather-sentinel-secrets
+              key: ADMIN_PASSWORD
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sga-service
+  namespace: weather-sentinel
+spec:
+  selector:
+    app: sga-service
+  ports:
+  - port: 50053
+    targetPort: 50053
+  type: ClusterIP
+---
+# SGM (Sistema Gestione Meteo)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sgm-service
+  namespace: weather-sentinel
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sgm-service
+  template:
+    metadata:
+      labels:
+        app: sgm-service
+    spec:
+      containers:
+      - name: sgm-service
+        image: sgm_service_image:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 50054
+        env:
+        - name: MYSQL_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: weather-sentinel-config
+              key: MYSQL_HOST_SGM
+        - name: MYSQL_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: weather-sentinel-config
+              key: MYSQL_PORT
+        - name: MYSQL_USER
+          valueFrom:
+            configMapKeyRef:
+              name: weather-sentinel-config
+              key: MYSQL_USER
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: weather-sentinel-secrets
+              key: SGM_DB_PASSWORD
+        - name: MYSQL_DATABASE
+          valueFrom:
+            configMapKeyRef:
+              name: weather-sentinel-config
+              key: MYSQL_DATABASE_SGM
+        - name: PORTA_SGM
+          valueFrom:
+            configMapKeyRef:
+              name: weather-sentinel-config
+              key: PORTA_SGM
+        - name: KAFKA_BOOTSTRAP_SERVERS
+          valueFrom:
+            configMapKeyRef:
+              name: weather-sentinel-config
+              key: KAFKA_BOOTSTRAP_SERVERS
+        - name: KAFKA_TOPIC
+          valueFrom:
+            configMapKeyRef:
+              name: weather-sentinel-config
+              key: KAFKA_TOPIC
+        - name: OPENWEATHER_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: weather-sentinel-secrets
+              key: OPENWEATHER_API_KEY
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sgm-service
+  namespace: weather-sentinel
+spec:
+  selector:
+    app: sgm-service
+  ports:
+  - port: 50054
+    targetPort: 50054
+  type: ClusterIP
+---
+# SED (Servizio Elaborazione Dati)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sed-service
+  namespace: weather-sentinel
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sed-service
+  template:
+    metadata:
+      labels:
+        app: sed-service
+    spec:
+      containers:
+      - name: sed-service
+        image: sed_service_image:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 50055
+        env:
+        - name: MYSQL_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: weather-sentinel-config
+              key: MYSQL_HOST_SED
+        - name: MYSQL_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: weather-sentinel-config
+              key: MYSQL_PORT
+        - name: MYSQL_USER
+          valueFrom:
+            configMapKeyRef:
+              name: weather-sentinel-config
+              key: MYSQL_USER
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: weather-sentinel-secrets
+              key: SED_DB_PASSWORD
+        - name: MYSQL_DATABASE
+          valueFrom:
+            configMapKeyRef:
+              name: weather-sentinel-config
+              key: MYSQL_DATABASE_SED
+        - name: PORTA_SED
+          valueFrom:
+            configMapKeyRef:
+              name: weather-sentinel-config
+              key: PORTA_SED
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sed-service
+  namespace: weather-sentinel
+spec:
+  selector:
+    app: sed-service
+  ports:
+  - port: 50055
+    targetPort: 50055
+  type: ClusterIP
+---
+# GLS (Gestore Livello Servizio)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gls-service
+  namespace: weather-sentinel
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gls-service
+  template:
+    metadata:
+      labels:
+        app: gls-service
+    spec:
+      containers:
+      - name: gls-service
+        image: gls_service_image:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 50056
+        env:
+        - name: MYSQL_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: weather-sentinel-config
+              key: MYSQL_HOST_GLS
+        - name: MYSQL_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: weather-sentinel-config
+              key: MYSQL_PORT
+        - name: MYSQL_USER
+          valueFrom:
+            configMapKeyRef:
+              name: weather-sentinel-config
+              key: MYSQL_USER
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: weather-sentinel-secrets
+              key: GLS_DB_PASSWORD
+        - name: MYSQL_DATABASE
+          valueFrom:
+            configMapKeyRef:
+              name: weather-sentinel-config
+              key: MYSQL_DATABASE_GLS
+        - name: PORTA_GLS
+          valueFrom:
+            configMapKeyRef:
+              name: weather-sentinel-config
+              key: PORTA_GLS
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gls-service
+  namespace: weather-sentinel
+spec:
+  selector:
+    app: gls-service
+  ports:
+  - port: 50056
+    targetPort: 50056
+  type: ClusterIP
