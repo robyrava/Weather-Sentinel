@@ -7,6 +7,7 @@ from utility import*
 
 import hashlib
 import threading
+import requests
 import socket
 import time
 import datetime
@@ -320,6 +321,34 @@ def crea_server():
                                 ERRORI_INTERNI_SGA.inc()
                                 TEMPO_DI_RISPOSTA_SGA.set(time.time_ns() - timestamp_client)
                                 return "Errore nell'eliminazione dell'account", 500
+
+                            #Contatto SGM per eliminare i vincoli dell'utente dalla tabella vincoli_utente
+                            try:
+                                # Prepara i dati da inviare
+                                dati_richiesta = {
+                                    "id_utente": utente_info.get('id'),
+                                    "timestamp_client": time.time_ns()
+                                }
+                                
+                                # URL dell'endpoint SGM per eliminare i vincoli
+                                url_sgm = f"http://{os.environ.get('SGM_HOST')}:{os.environ.get('PORTA_SGM')}/elimina_vincoli_per_id_utente"
+                                
+                                # Invia la richiesta DELETE a SGM
+                                risposta_sgm = requests.delete(
+                                    url_sgm, 
+                                    json=dati_richiesta,
+                                    headers={"Content-Type": "application/json"}
+                                )
+                                
+                                if risposta_sgm.status_code != 200:
+                                    logger.warning(f"Avviso: eliminazione vincoli su SGM non riuscita. Codice: {risposta_sgm.status_code}, Risposta: {risposta_sgm.text}")
+                                else:
+                                    logger.info(f"Vincoli utente eliminati con successo dal SGM: {risposta_sgm.text}")
+                                    
+                            except Exception as sgm_err:
+                                logger.warning(f"Errore nella comunicazione con SGM: {sgm_err}")
+                                # Continuiamo comunque con l'eliminazione dell'account                            
+
                             
                             # Decrementa il contatore degli utenti registrati
                             CONTEGGIO_UTENTI_REGISTRATI_SGA.dec()
@@ -503,18 +532,6 @@ if __name__ == '__main__':
         
         if not utenti_cursor:
             sys.exit("DB_USER Manager terminating: impossibile creare la tabella utenti\n")
-        
-        # Crea la tabella metriche_to_restore se non esiste
-        metriche_cursor = esegui_query(
-            connessione=connessione,
-            crea_tabella=True,
-            nome_tabella="metriche_to_restore",
-            definizione_colonne="id INTEGER PRIMARY KEY AUTO_INCREMENT, metriche JSON NOT NULL",
-            istogramma=ISTOGRAMMA_DURATA_QUERY
-        )
-        
-        if not metriche_cursor:
-            sys.exit("DB_USER Manager terminating: impossibile creare la tabella metriche_to_restore\n")
     
     except Exception as err:
         sys.stderr.write("Exception raised! -> " + str(err) + "\n")

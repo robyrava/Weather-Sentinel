@@ -688,7 +688,7 @@ def crea_server():
             RICHIESTE_FALLITE.inc()
             return "Errore: la richiesta deve essere in formato JSON", 400
 
-    @app.route('/elimina_vincoli_utente', methods=['POST'])
+    @app.route('/elimina_vincoli_utente', methods=['DELETE'])
     def gestione_elimina_vincoli_utente():
         """
         Route per eliminare i vincoli di un utente per una specifica città.
@@ -715,6 +715,7 @@ def crea_server():
                 
                 # Token valido, estrai email e procedi
                 email_utente = payload.get('email')
+                logger.info(f"Richiesta eliminazione vincoli utente: {email_utente}")
                 
                 # Ottieni l'ID utente tramite chiamata API al servizio SGA
                 id_utente = ottieni_id_utente_da_email(email_utente)
@@ -749,13 +750,8 @@ def crea_server():
                         longitudine_arrotondata = round(longitudine, 3)
                         codice_postale = dati_dict.get('città')[3]
                         codice_stato = dati_dict.get('città')[4]
-                        
-                        logger.info(
-                            "CITTÀ  " + nome_città + '  ' + str(latitudine_arrotondata) + '  ' + 
-                            str(longitudine_arrotondata) + '  ' + str(codice_postale) + '  ' + 
-                            str(codice_stato) + "\n\n")
-                        
-                        # Recupera le informazioni sulla città
+                                                
+                        # Verifica se la città esiste nel database
                         cursore_citta = esegui_query(
                             connessione_SGM,
                             query="SELECT * FROM citta WHERE ROUND(latitudine, 3) = %s AND ROUND(longitudine, 3) = %s AND città = %s",
@@ -796,6 +792,7 @@ def crea_server():
                             
                         REGOLE_ATTIVE.dec()
                         TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
+                        logger.info(f"Utente con id: {id_utente} ha eliminato la città {nome_città} con successo!\n")
                         return "Vincoli utente eliminati correttamente", 200
                     
                     finally:
@@ -815,6 +812,109 @@ def crea_server():
         else:
             RICHIESTE_FALLITE.inc()
             return "Errore: la richiesta deve essere in formato JSON", 400
+
+    @app.route('/elimina_vincoli_per_id_utente', methods=['DELETE'])
+    def gestione_elimina_vincoli_per_id_utente():
+        """
+        Route per eliminare tutti i vincoli di un utente quando il suo account viene eliminato.
+        Richiesta dal servizio SGA durante l'eliminazione di un account.
+        """
+        # Incrementa la metrica delle richieste
+        RICHIESTE_SGM.inc()
+        
+        # Verifica se i dati ricevuti sono in formato JSON
+        if request.is_json:
+            try:
+                # Estrai i dati JSON
+                dati_dict = request.get_json()
+
+                if dati_dict:
+                    timestamp_client = dati_dict.get("timestamp_client")
+                    id_utente = dati_dict.get("id_utente")
+                    logger.info(f"Richiesta eliminazione vincoli utente ID: {id_utente}")
+                    
+                    # Verifica che l'ID utente sia presente
+                    if not id_utente:
+                        RICHIESTE_FALLITE.inc()
+                        TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
+                        return "ID utente mancante", 400
+                    
+                    try:
+                        # Inizializza la connessione al database SGM
+                        connessione_SGM = inizializza_connessione_db(
+                            host=DB_HOSTNAME, 
+                            porta=DB_PORT, 
+                            utente=DB_USER, 
+                            password=DB_PASSWORD, 
+                            database=DB_DATABASE
+                        )
+                        
+                        if not connessione_SGM:
+                            RICHIESTE_FALLITE.inc()
+                            ERRORE_INTERNO.inc()
+                            TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
+                            return "Errore nella connessione al database", 500
+                        
+                        try:
+                            # Conta quanti vincoli ha l'utente per decrementare correttamente il contatore
+                            cursore_count = esegui_query(
+                                connessione_SGM,
+                                query="SELECT COUNT(*) FROM vincoli_utente WHERE id_utente = %s",
+                                parametri=(str(id_utente),),
+                                istogramma=ISTOGRAMMA_DURATA_QUERY
+                            )
+                            
+                            if not cursore_count:
+                                RICHIESTE_FALLITE.inc()
+                                ERRORE_INTERNO.inc()
+                                TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
+                                return "Errore nel conteggio dei vincoli utente", 500
+                                
+                            count_risultato = cursore_count.fetchone()
+                            numero_vincoli = count_risultato[0] if count_risultato else 0
+                            
+                            # Elimina tutti i vincoli dell'utente
+                            risultato = esegui_query(
+                                connessione_SGM,
+                                query="DELETE FROM vincoli_utente WHERE id_utente = %s",
+                                parametri=(str(id_utente),),
+                                commit=True,
+                                istogramma=ISTOGRAMMA_DURATA_QUERY
+                            )
+                            
+                            if not risultato:
+                                RICHIESTE_FALLITE.inc()
+                                ERRORE_INTERNO.inc()
+                                TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
+                                return "Errore nell'eliminazione dei vincoli utente", 500
+                            
+                            # Decrementa il contatore delle regole attive
+                            if numero_vincoli > 0:
+                                for _ in range(numero_vincoli):
+                                    REGOLE_ATTIVE.dec()
+                                
+                            logger.info(f"Eliminati {numero_vincoli} vincoli per l'utente con ID {id_utente}")
+                            TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
+                            return f"Vincoli utente eliminati correttamente: {numero_vincoli}", 200
+                        
+                        finally:
+                            # Chiudi la connessione
+                            chiudi_connessione_db(connessione_SGM)
+                            
+                    except Exception as err:
+                        logger.error(f"Eccezione sollevata! -> {err}")
+                        RICHIESTE_FALLITE.inc()
+                        ERRORE_INTERNO.inc()
+                        TEMPO_DI_RISPOSTA.set(time.time_ns() - timestamp_client)
+                        return f"Errore nella connessione al database: {str(err)}", 500
+                        
+            except Exception as e:
+                RICHIESTE_FALLITE.inc()
+                return f"Errore nella lettura dei dati: {str(e)}", 400
+        else:
+            RICHIESTE_FALLITE.inc()
+            return "Errore: la richiesta deve essere in formato JSON", 400
+
 
     @app.route('/mostra_regole', methods=['GET'])
     def gestione_mostra_regole():
