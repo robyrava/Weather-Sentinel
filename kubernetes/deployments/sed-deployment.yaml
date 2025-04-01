@@ -1,0 +1,109 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sed-service
+  namespace: weather-sentinel
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sed-service
+  template:
+    metadata:
+      labels:
+        app: sed-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "5000"
+        prometheus.io/path: "/metriche"
+    spec:
+      containers:
+      - name: sed
+        image: sed_service_image:latest
+        imagePullPolicy: Never
+        env:
+        # Database
+        - name: HOSTNAME
+          value: "sed-db"
+        - name: PORT
+          value: "3306"
+        - name: USER
+          value: "root"
+        - name: PASSWORD_DB
+          value: "1234"
+        - name: DATABASE_SED
+          valueFrom:
+            configMapKeyRef:
+              name: sed-config
+              key: DATABASE_SED
+              
+        # Server
+        - name: HOST
+          valueFrom:
+            configMapKeyRef:
+              name: sed-config
+              key: HOST
+        - name: PORTA_SED
+          value: "5000"  
+              
+        # Kafka Consumer
+        - name: KAFKA_BROKER
+          value: "kafka:9092"
+        - name: KAFKA_TOPIC
+          valueFrom:
+            configMapKeyRef:
+              name: sed-config
+              key: KAFKA_TOPIC
+        - name: GROUP_ID
+          valueFrom:
+            configMapKeyRef:
+              name: sed-config
+              key: GROUP_ID
+        - name: TIMER_POLLING
+          valueFrom:
+            configMapKeyRef:
+              name: sed-config
+              key: TIMER_POLLING
+              
+        # SGM
+        - name: SGM_HOST
+          value: "sgm-service"
+        - name: PORTA_SGM
+          value: "80"  
+          
+        # Notifiche
+        - name: INTERVALLO_NOTIFICA
+          valueFrom:
+            configMapKeyRef:
+              name: sed-config
+              key: INTERVALLO_NOTIFICA
+
+        # OpenWeather API Key
+        - name: APIKEY
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: openweather-api-key
+              
+        ports:
+        - containerPort: 5000
+          name: http
+        readinessProbe:
+          httpGet:
+            path: /metriche
+            port: 5000
+          initialDelaySeconds: 15
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /metriche
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 20
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "400m"

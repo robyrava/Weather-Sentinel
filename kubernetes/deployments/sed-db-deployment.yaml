@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sed-db
+  namespace: weather-sentinel
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sed-db
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: sed-db
+    spec:
+      containers:
+      - name: mysql
+        image: mysql:5.7
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          value: "1234"  # Useremo la versione semplificata per evitare problemi iniziali
+        - name: MYSQL_DATABASE
+          valueFrom:
+            configMapKeyRef:
+              name: sed-config
+              key: DATABASE_SED
+        - name: MYSQL_ROOT_HOST
+          value: "%"
+        ports:
+        - containerPort: 3306
+          name: mysql
+        volumeMounts:
+        - name: sed-db-storage
+          mountPath: /var/lib/mysql
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: sed-db-storage
+        persistentVolumeClaim:
+          claimName: sed-db-pvc

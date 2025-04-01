@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: sga-service
+  namespace: weather-sentinel
+  labels:
+    app: sga-service
+spec:
+  selector:
+    app: sga-service
+  ports:
+  - port: 80
+    targetPort: 5000
+    name: http
+  type: ClusterIP

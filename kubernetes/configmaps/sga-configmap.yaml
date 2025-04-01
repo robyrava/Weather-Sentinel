@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sga-config
+  namespace: weather-sentinel
+data:
+  # Configurazioni del database
+  DATABASE_SGA: "SGA_db"
+  
+  # Configurazioni del servizio
+  HOST: "0.0.0.0"
+  PORTA_SGA: "5000"
+  

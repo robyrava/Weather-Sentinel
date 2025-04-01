@@ -1,0 +1,96 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sgm-service
+  namespace: weather-sentinel
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sgm-service
+  template:
+    metadata:
+      labels:
+        app: sgm-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "5000"
+        prometheus.io/path: "/metriche"
+    spec:
+      containers:
+      - name: sgm
+        image: sgm_service_image:latest
+        imagePullPolicy: Never
+        env:
+        # Database
+        - name: HOSTNAME
+          value: "sgm-db"
+        - name: PORT
+          value: "3306"
+        - name: USER
+          value: "root"
+        - name: PASSWORD_DB
+          value: "1234"
+        - name: DATABASE_SGM
+          valueFrom:
+            configMapKeyRef:
+              name: sgm-config
+              key: DATABASE_SGM
+              
+        # Server
+        - name: HOST
+          valueFrom:
+            configMapKeyRef:
+              name: sgm-config
+              key: HOST
+        - name: PORTA_SGM
+          valueFrom:
+            configMapKeyRef:
+              name: sgm-config
+              key: PORTA_SGM
+              
+        # Kafka
+        - name: KAFKA_BROKER
+          valueFrom:
+            configMapKeyRef:
+              name: sgm-config
+              key: KAFKA_BROKER
+        - name: KAFKA_TOPIC
+          valueFrom:
+            configMapKeyRef:
+              name: sgm-config
+              key: KAFKA_TOPIC
+        - name: INTERVALLO_PRODUZIONE_NOTIFICHE_KAFKA
+          valueFrom:
+            configMapKeyRef:
+              name: sgm-config
+              key: INTERVALLO_PRODUZIONE_NOTIFICHE_KAFKA
+              
+        # SGA
+        - name: SGA_HOST
+          value: "sga-service"
+        - name: PORTA_SGA
+          value: "80"
+              
+        ports:
+        - containerPort: 5000
+          name: http
+        readinessProbe:
+          httpGet:
+            path: /metriche
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /metriche
+            port: 5000
+          initialDelaySeconds: 45
+          periodSeconds: 20
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "400m"

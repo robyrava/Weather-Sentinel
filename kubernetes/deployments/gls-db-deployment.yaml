@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gls-db
+  namespace: weather-sentinel
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gls-db
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: gls-db
+    spec:
+      containers:
+      - name: mysql
+        image: mysql:5.7
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          value: "1234"  # Versione semplificata per evitare problemi iniziali
+        - name: MYSQL_DATABASE
+          valueFrom:
+            configMapKeyRef:
+              name: gls-config
+              key: DATABASE_GLS
+        - name: MYSQL_ROOT_HOST
+          value: "%"
+        ports:
+        - containerPort: 3306
+          name: mysql
+        volumeMounts:
+        - name: gls-db-storage
+          mountPath: /var/lib/mysql
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: gls-db-storage
+        persistentVolumeClaim:
+          claimName: gls-db-pvc

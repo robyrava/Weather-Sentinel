@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zookeeper
+  namespace: weather-sentinel
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: zookeeper
+  template:
+    metadata:
+      labels:
+        app: zookeeper
+    spec:
+      containers:
+      - name: zookeeper
+        image: wurstmeister/zookeeper:latest 
+        ports:
+        - containerPort: 2181
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "200m"
+        volumeMounts:
+        - name: zookeeper-data
+          mountPath: /tmp/zookeeper/data  # Percorso corretto per wurstmeister/zookeeper
+        - name: zookeeper-log
+          mountPath: /tmp/zookeeper/log   # Percorso corretto per wurstmeister/zookeeper
+      volumes:
+      - name: zookeeper-data
+        persistentVolumeClaim:
+          claimName: zookeeper-data-pvc
+      - name: zookeeper-log
+        persistentVolumeClaim:
+          claimName: zookeeper-log-pvc

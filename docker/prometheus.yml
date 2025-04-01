@@ -23,12 +23,6 @@ scrape_configs:
     metrics_path: /prometheus/metrics/sed
     static_configs:
       - targets: ['api-gateway:80']
-      
-  - job_name: 'gls'
-    scrape_interval: 15s
-    metrics_path: /prometheus/metrics/gls
-    static_configs:
-      - targets: ['api-gateway:80']
   
   - job_name: cadvisor
     scrape_interval: 15s

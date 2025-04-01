@@ -28,7 +28,7 @@ PORTA_SGM = os.environ.get('PORTA_SGM')
 PORTA_SGA = os.environ.get('PORTA_SGA')
 KAFKA_BROKER = os.environ.get('KAFKA_BROKER')
 KAFKA_TOPIC = os.environ.get('KAFKA_TOPIC')
-INTERVALLO_PRODUZIONE_NOTIFICHE_KAFKA = 60
+INTERVALLO_PRODUZIONE_NOTIFICHE_KAFKA = 60  # secondi
 
 
 # definizione delle metriche da esporre
@@ -139,9 +139,10 @@ def crea_messaggio_kafka(dizionario_json_finale, id_città, connessione, istogra
         lista_neve.append(dizionario_regole.get("neve", "null"))
     
     # Costruisci il messaggio finale con i dati raccolti
-    dizionario_json_finale["num_righe"] = lista_id_righe
+    dizionario_json_finale["num_righe"] = len(lista_id_righe)
     dizionario_json_finale["id_utente"] = lista_id_utenti
     dizionario_json_finale["localita"] = città
+    dizionario_json_finale["id_righe"] = lista_id_righe
     
     # Aggiungi solo le regole che hanno almeno un valore non nullo
     # Per ogni tipo di regola, controlla se almeno un utente ha un valore non nullo
@@ -251,13 +252,13 @@ def callback_consegna(err, msg):
     Aggiorna la tabella vincoli_utente per evitare di considerare nuovamente
     una riga nella costruzione del messaggio Kafka da pubblicare nel topic.
     In questo modo, evitiamo che repliche multiple del SGM inviino
-    lo stesso messaggio di trigger ai worker.
+    lo stesso messaggio di trigger al SED.
     """
     if err:
         logger.error('%% Consegna messaggio fallita: %s\n' % err)
         dizionario_messaggio = json.loads(msg.value())
         logger.info(dizionario_messaggio)
-        lista_id_righe = dizionario_messaggio.get("num_righe")
+        lista_id_righe = dizionario_messaggio.get("id_righe", [])
         try:
             # Inizializza la connessione al database
             connessione = inizializza_connessione_db(
@@ -303,7 +304,7 @@ def callback_consegna(err, msg):
                     (msg.topic(), msg.partition(), msg.offset()))
         dizionario_messaggio = json.loads(msg.value())
         logger.info(dizionario_messaggio)
-        lista_id_righe = dizionario_messaggio.get("num_righe")
+        lista_id_righe = dizionario_messaggio.get("id_righe", [])
         try:
             # Inizializza la connessione al database
             connessione = inizializza_connessione_db(
@@ -1135,7 +1136,6 @@ if __name__ == '__main__':
         nuovo_topic = NewTopic(KAFKA_TOPIC, 6, 1)  
         kadmin.create_topics([nuovo_topic, ])
 
-    
     # Ricerca eventi da inviare già presenti nel DB
     Kafka_lista_messaggi = recupera_vincoli_pendenti()
     if Kafka_lista_messaggi != False:
@@ -1157,14 +1157,6 @@ if __name__ == '__main__':
     threadAPIGateway = threading.Thread(target=avvia_server)
     threadAPIGateway.daemon = True
     threadAPIGateway.start()
-    
-    """
-    #Decommentare se è necessario un thread per comunicare con User Manager
-    logger.info("Avvio thread User Manager!\n")
-    threadUM = threading.Thread(target=comunica_con_um)
-    threadUM.daemon = True
-    threadUM.start()
-    """
 
     try:
         while True:

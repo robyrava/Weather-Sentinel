@@ -338,7 +338,7 @@ def controlla_regole(vincoli_utente, dati_api):
     num_righe = vincoli_utente.get('num_righe', [])
     
     # Per ogni riga di vincoli (ciascuna riga corrisponde a un utente)
-    for i in range(len(num_righe)):
+    for i in range(num_righe):
         # Controllo se l'indice è valido per tutti gli array nei vincoli
         if i >= len(vincoli_utente.get('id_utente', [])):
             logger.warning(f"\nIndice {i} non valido per id_utente\n")

@@ -1,0 +1,18 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: create-kafka-topic
+  namespace: weather-sentinel
+spec:
+  template:
+    spec:
+      containers:
+      - name: kafka-client
+        image: bitnami/kafka:3.4.0
+        command:
+        - "/bin/bash"
+        - "-c"
+        - |
+          kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:9092 --replication-factor 1 --partitions 1 --topic aggiornamento_eventi
+      restartPolicy: Never
+  backoffLimit: 4

@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: sgm-db-pv
+  labels:
+    type: local
+    app: sgm-db
+spec:
+  storageClassName: standard
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: "/data/sgm-db"
+  persistentVolumeReclaimPolicy: Delete

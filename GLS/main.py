@@ -379,7 +379,7 @@ def avvia_server():
 def crea_server():
     app = Flask(__name__)
 
-    @app.route('/adminlogin', methods=['POST'])
+    @app.route('/admin_login', methods=['POST'])
     def admin_login():
         # Verifica se i dati ricevuti sono in formato JSON
         if request.is_json:

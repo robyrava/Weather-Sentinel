@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sgm-config
+  namespace: weather-sentinel
+data:
+  # Database
+  DATABASE_SGM: "SGM_db"
+  
+  # Server
+  HOST: "0.0.0.0"
+  PORTA_SGM: "5000" 
+  
+  # Kafka
+  KAFKA_BROKER: "kafka:9092"
+  KAFKA_TOPIC: "aggiornamento_eventi"
+  INTERVALLO_PRODUZIONE_NOTIFICHE_KAFKA: "60"

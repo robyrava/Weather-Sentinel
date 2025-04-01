@@ -1,0 +1,106 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gls-service
+  namespace: weather-sentinel
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gls-service
+  template:
+    metadata:
+      labels:
+        app: gls-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "5000"
+        prometheus.io/path: "/metriche"
+    spec:
+      containers:
+      - name: gls
+        image: gls_service_image:latest
+        imagePullPolicy: Never
+        env:
+        # Database
+        - name: HOSTNAME
+          value: "gls-db"
+        - name: PORT
+          value: "3306"
+        - name: USER
+          value: "root"
+        - name: PASSWORD_DB
+          value: "1234"  # Versione semplificata
+        - name: DATABASE_GLS
+          valueFrom:
+            configMapKeyRef:
+              name: gls-config
+              key: DATABASE_GLS
+              
+        # Server
+        - name: HOST
+          valueFrom:
+            configMapKeyRef:
+              name: gls-config
+              key: HOST
+        - name: PORTA_GLS
+          valueFrom:
+            configMapKeyRef:
+              name: gls-config
+              key: PORTA_GLS
+        
+        # Admin
+        - name: ADMIN_EMAIL
+          valueFrom:
+            configMapKeyRef:
+              name: gls-config
+              key: ADMIN_EMAIL
+        - name: ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: gls-admin-secret
+              key: ADMIN_PASSWORD
+              
+        # Prometheus
+        - name: PROMETHEUS_URL
+          valueFrom:
+            configMapKeyRef:
+              name: gls-config
+              key: PROMETHEUS_URL
+              
+        # Altri servizi
+        - name: SGA_HOST
+          value: "sga-service"
+        - name: SGA_PORT
+          value: "80"
+        - name: SGM_HOST
+          value: "sgm-service"
+        - name: SGM_PORT
+          value: "80"
+        - name: SED_HOST
+          value: "sed-service"
+        - name: SED_PORT
+          value: "80"
+              
+        ports:
+        - containerPort: 5000
+          name: http
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "400m"
+        readinessProbe:
+          httpGet:
+            path: /metriche
+            port: 5000
+          initialDelaySeconds: 15
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /metriche
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 20

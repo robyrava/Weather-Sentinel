@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: sga-db-pv
+  labels:
+    type: local
+    app: sga-db
+spec:
+  storageClassName: standard
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: "/data/sga-db"
+  persistentVolumeReclaimPolicy: Retain

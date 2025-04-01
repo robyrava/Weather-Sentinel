@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: zookeeper-data-pv
+  labels:
+    type: local
+    app: zookeeper-data
+spec:
+  storageClassName: standard
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: "/data/zookeeper/data"
+  persistentVolumeReclaimPolicy: Delete  # Retain non funzina
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: zookeeper-log-pv
+  labels:
+    type: local
+    app: zookeeper-log
+spec:
+  storageClassName: standard
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: "/data/zookeeper/log"
+  persistentVolumeReclaimPolicy: Delete  

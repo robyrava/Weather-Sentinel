@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sed-config
+  namespace: weather-sentinel
+data:
+  # Configurazione del database
+  DATABASE_SED: "SED_db"
+  
+  # Configurazioni del servizio
+  HOST: "0.0.0.0"
+  PORTA_SED: "5000"
+  
+  # Configurazioni Kafka
+  KAFKA_TOPIC: "aggiornamento_eventi"
+  GROUP_ID: "group1"
+  TIMER_POLLING: "30"
+
+  #Notifiche
+  INTERVALLO_NOTIFICA: "30"
