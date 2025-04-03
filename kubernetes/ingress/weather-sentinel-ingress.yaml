@@ -4,136 +4,119 @@ metadata:
   name: weather-sentinel-ingress
   namespace: weather-sentinel
   annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /$2
     nginx.ingress.kubernetes.io/enable-cors: "true"
     nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, OPTIONS, DELETE, PUT"
     nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"
     nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    #nginx.ingress.kubernetes.io/rewrite-target: /metriche/$2
+    #nginx.ingress.kubernetes.io/use-regex: "true"
 spec:
   ingressClassName: nginx
   rules:
   - http:
       paths:
-      # SGA Routes - Login
-      - path: /auth/login
-        pathType: Prefix
-        backend:
-          service:
-            name: sga-service
-            port:
-              number: 80
-              
-      # SGA Routes - Registrazione
-      - path: /auth/registrazione(/|$)(.*)
-        pathType: Prefix
-        backend:
-          service:
-            name: sga-service
-            port:
-              number: 80
-              
-      # SGA Routes - Eliminazione account
-      - path: /auth/elimina_account
-        pathType: Prefix
-        backend:
-          service:
-            name: sga-service
-            port:
-              number: 80
-              
-      # SGA Routes - Prometheus metrics
-      - path: /prometheus/metrics
+      # SGA Routes
+      - path: /login
         pathType: Exact
         backend:
           service:
             name: sga-service
             port:
               number: 80
-      
-      # SGA Routes - User Management
-      - path: /user(/|$)(.*)
-        pathType: ImplementationSpecific
+              
+      - path: /registrazione
+        pathType: Exact
         backend:
           service:
             name: sga-service
             port:
               number: 80
+              
+      - path: /elimina_account
+        pathType: Exact
+        backend:
+          service:
+            name: sga-service
+            port:
+              number: 80          
+
+      
               
       # SGM Routes
-      - path: /weather/rules(/|$)(.*)
-        pathType: ImplementationSpecific
-        backend:
-          service:
-            name: sgm-service
-            port:
-              number: 80
-              
-      # SGM Routes - Specific Prometheus metrics
-      - path: /prometheus/metrics/sgm
+      - path: /aggiorna_regole
         pathType: Exact
         backend:
           service:
             name: sgm-service
             port:
-              number: 80
+              number: 80 
 
-      # GLS Routes - Admin
-      - path: /admin(/|$)(.*)
-        pathType: ImplementationSpecific
+      - path: /elimina_vincoli_utente
+        pathType: Exact
+        backend:
+          service:
+            name: sgm-service
+            port:
+              number: 80 
+      
+      - path: /elimina_vincoli_per_id_utente
+        pathType: Exact
+        backend:
+          service:
+            name: sgm-service
+            port:
+              number: 80 
+      
+      - path: /mostra_regole
+        pathType: Exact
+        backend:
+          service:
+            name: sgm-service
+            port:
+              number: 80 
+
+      #GLS Routes
+      - path: /admin_login
+        pathType: Exact
+        backend:
+          service:
+            name: gls-service
+            port:
+              number: 80    
+      
+      - path: /aggiorna_metriche
+        pathType: Exact
         backend:
           service:
             name: gls-service
             port:
               number: 80
       
-      # GLS Routes - Monitoring
-      - path: /monitoring(/|$)(.*)
-        pathType: ImplementationSpecific
-        backend:
-          service:
-            name: gls-service
-            port:
-              number: 80
-
-      # GLS Routes - Metrics paths (instead of /monitoring)
-      - path: /metrics/update
-        pathType: Prefix
-        backend:
-          service:
-            name: gls-service
-            port:
-              number: 80
-      - path: /metrics/delete
-        pathType: Prefix
-        backend:
-          service:
-            name: gls-service
-            port:
-              number: 80
-      - path: /metrics/status
-        pathType: Prefix
-        backend:
-          service:
-            name: gls-service
-            port:
-              number: 80
-      - path: /metrics/violations
-        pathType: Prefix
-        backend:
-          service:
-            name: gls-service
-            port:
-              number: 80
-      - path: /metrics/forecast
-        pathType: Prefix
+      - path: /elimina_metriche
+        pathType: Exact
         backend:
           service:
             name: gls-service
             port:
               number: 80
       
-      # GLS Prometheus metrics
-      - path: /prometheus/metrics/gls
+      - path: /stato_metriche
+        pathType: Exact
+        backend:
+          service:
+            name: gls-service
+            port:
+              number: 80
+      
+      - path: /violazioni_metriche
+        pathType: Exact
+        backend:
+          service:
+            name: gls-service
+            port:
+              number: 80
+
+      - path: /previsione_violazioni
         pathType: Exact
         backend:
           service:
@@ -142,11 +125,11 @@ spec:
               number: 80
 
       # Prometheus
-      - path: /prometheus(/|$)(.*)
-        pathType: ImplementationSpecific
+      - path: /prometheus
+        pathType: Prefix
         backend:
           service:
             name: prometheus
             port:
               number: 9090
-              
+

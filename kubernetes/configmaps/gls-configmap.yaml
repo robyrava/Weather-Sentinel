@@ -10,9 +10,7 @@ data:
   # Configurazioni del servizio
   HOST: "0.0.0.0"
   PORTA_GLS: "5000"
-  
-  # Admin predefinito (è preferibile spostare queste credenziali in un secret)
-  ADMIN_EMAIL: "admin@weathersentinel.com"
+
   
   # Configurazione Prometheus
   PROMETHEUS_URL: "http://prometheus:9090"

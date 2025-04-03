@@ -9,7 +9,7 @@ spec:
   selector:
     app: gls-service
   ports:
-  - port: 50056
-    targetPort: 50056
-    name: grpc
+  - port: 80
+    targetPort: 5000
+    name: http
   type: ClusterIP

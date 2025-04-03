@@ -482,7 +482,7 @@ def avvia_server():
 def crea_server():
     app = Flask(__name__)
     
-     #VIENE FATTA UNA DOPPIA CONNESSIONE AL DATABASE ==> AGGIUSTARE
+     
     @app.route('/aggiorna_regole', methods=['POST'])
     def gestione_aggiorna_regole():
         """
