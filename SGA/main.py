@@ -266,7 +266,7 @@ def crea_server():
             FALLIMENTI_SGA.inc()
             return "Errore: la richiesta deve essere in formato JSON", 400
     
-    @app.route('/elimina_account', methods=['POST'])
+    @app.route('/elimina_account', methods=['DELETE'])
     def elimina_account():
         # Incrementa la metrica delle richieste
         RICHIESTE_SGA.inc()

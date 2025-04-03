@@ -6,7 +6,7 @@ groups:
       expr: SGA_richieste - SGA_richieste_fallite
 
     - record: SGM_richieste_successo_totali
-      expr: richieste_SGM - richieste_fallite_SGM
+      expr: richieste_SGM - richieste_SGM_Fallite
 
     - record: SED_richieste_OpenWeather_successo_totali
       expr: SED_richieste_a_OpenWeather - SED_errore_richiesta_OpenWeather

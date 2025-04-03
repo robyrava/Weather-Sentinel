@@ -539,7 +539,7 @@ def crea_server():
         else:
             return "Errore: la richiesta deve essere in formato JSON", 400    
 
-    @app.route('/elimina_metriche', methods=['POST'])
+    @app.route('/elimina_metriche', methods=['DELETE'])
     def elimina_metriche():
         # Verifica se i dati ricevuti sono in formato JSON (dovrebbe essere del tipo {"metriche": [nome_metrica1, nome_metrica2, ... ]})
         if request.is_json:
